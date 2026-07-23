@@ -1,0 +1,425 @@
+---
+title: Lua patcher API
+sidebar:
+  order: 1.1
+---
+
+GDPatch mods use patchers written in [the Lua programming language](https://www.lua.org/) to modify game code. Before the game finishes loading, GDPatch loads the [`patcher.lua` script in your mod folder](/modding/getting-started/#patcherlua), which calls functions provided by GDPatch to patch game files.
+
+Since these scripts are loaded before the game finishes loading, **patchers exist independently of the GDScript runtime** and have no relation to the [GDScript autoload](/modding/gdscript). You cannot run GDScript or access the scene tree from patchers, as the game has not loaded yet. Conceptually, it is similar to modifying the game's pack file on disk before starting it, except that it happens at runtime.
+
+The Lua version in use is Lua 5.5. `print` statements will be redirected to the GDPatch log file.
+
+## Simple text patching
+
+We suggest using simple text patching if you're new to GDPatch, or if your change is relatively trivial. We suggest you reference [a project decompilation](/modding/getting-started/#helpful-tools) and print the script's source code (`print(src)`) while working on patches. Make sure to return the modified string in the patcher function!
+
+Consider reading about [Lua's pattern system](https://www.lua.org/manual/5.5/manual.html#6.5.1) for advanced string matching.
+
+## Advanced AST patching
+
+TODO
+
+## API reference
+
+These are available under the `GDPatch` global in the Lua runtime. Be careful not to confuse it with [the GDScript autoload](/modding/gdscript).
+
+### `GDPatch.get_pack()`
+
+Returns a table containing information about the game's pack file:
+
+- `path`: `string`
+  - The path to the pack file on disk. If the game contains multiple pack files, you can differentiate them with this field.
+- `files`: `string[]`
+  - A list of files in the pack file (*without* the `res://` prefix).
+
+```lua title="Example"
+local pack = GDPatch.get_pack()
+print("The pack at " .. pack.path .. "'s first file is " .. pack.files[1])
+```
+
+### `GDPatch.get_mods()`
+
+Returns an array containing all loaded mod manifests. You can access the mod ID via the `id` field.
+
+```lua title="Example"
+local mods = GDPatch.get_mods()
+print("There are " .. #mod_ids .. " mods loaded")
+```
+
+### `GDPatch.patch_script_as_text()`
+
+- Arguments:
+  - `paths`: `string | string[]`
+  - `callback`: `function(PatcherContext, string): string`
+  - `options`: `PatcherCallbackOptions` (optional)
+
+Registers a callback function for the path(s) provided. The callback function receives a [`PatcherContext`](#patchercontext) and the script's source code, and returns the modified source code. `paths` can either be a string or table of strings, and the paths should *not* contain the `res://` prefix.
+
+Most game scripts are stored in GDScript binary form (`.gdc`), in which case GDPatch will transparently convert the script to text format before calling this function. When editing binary scripts, the file extension *must* match what is stored in the pack file (so the paths will likely end in `.gdc` instead of `.gd`).
+
+**The script source code passed to this function is normalized**. Any special formatting (from the original game script or from other mods) is lost. This is done to improve compatibility of text-based patching from multiple mods at once.
+
+```lua title="Example"
+GDPatch.patch_script_as_text("Scripts/Player.gdc", function(ctx, src)
+  return src:gsub("const MAX_HEALTH = 10", "const MAX_HEALTH = 100")
+end)
+```
+
+### `GDPatch.patch_script_as_ast()`
+
+- Arguments:
+  - `paths`: `string | string[]`
+  - `callback`: `function(PatcherContext, GDScriptAST): GDScriptAST`
+  - `options`: `PatcherCallbackOptions` (optional)
+
+Registers a callback function for the path(s) provided. The callback function receives a [`PatcherContext`](#patchercontext) and the script's AST representation, and returns the modified AST. `paths` can either be a string or table of strings, and the paths should *not* contain the `res://` prefix.
+
+TODO
+
+### `GDPatch.patch_project_settings()`
+
+- Arguments:
+  - `callback`: `function(ProjectSettings): ProjectSettings`
+
+Registers a callback function for the game's `project.binary`. The callback function receives a table of key-value pairs (**not** a regular dictionary-like table, as to preserve item order).
+
+As an example, this function is used by GDPatch's builtin mod to install its autoload. Note that **you do not need to add your own autoload** as GDPatch will [load your scene or script automatically](/modding/getting-started/#datapck).
+
+```lua title="Example"
+GDPatch.patch_project_settings(function(settings)
+  table.insert(settings, 1, {
+    "autoload/GDPatch",
+    "*res://gdpatch/GDPatch.gd"
+  })
+  return settings
+end)
+```
+
+### `GDPatch.get_config_option()`
+
+- Arguments:
+  - `mod_id`: `string` (optional)
+  - `section`: `string`
+  - `option`: `string`
+
+Returns the value saved in the config file, or the default value [specified in the manifest](/getting-started/#gdpatch_modtoml) if set. If `mod_id` is nil, it will fall back to your mod ID.
+
+```lua title="Example"
+local option = GDPatch.get_config_option(nil, "section_id", "option_id")
+print(option)
+```
+
+### `GDPatch.set_config_option()`
+
+- Arguments:
+  - `mod_id`: `string` (optional)
+  - `section`: `string`
+  - `option`: `string`
+  - `value`: `any`
+
+Saves the specified value to the config file, or removes it if `value` is nil. If `mod_id` is nil, it will fall back to your mod ID.
+
+```lua title="Example"
+local value = "meow"
+GDPatch.set_config_option(nil, "section_id", "option_id", value)
+```
+
+## Types
+
+### `PatcherContext`
+
+A table containing extra context about the target file, provided in the callback of [`GDPatch.patch_script_as_text`](#gdpatchpatch_script_as_text)/[`GDPatch.patch_script_as_ast`](#gdpatchpatch_script_as_ast).
+
+- `path`: `string`
+  - The path of the file currently being patched.
+
+### `PatcherCallbackOptions`
+
+A table containing extra information that can be passed to [`GDPatch.patch_script_as_text`](#gdpatchpatch_script_as_text)/[`GDPatch.patch_script_as_ast`](#gdpatchpatch_script_as_ast).
+
+- `before`: `string[]` (optional)
+  - List of mod IDs to attempt to patch before.
+- `after`: `string[]` (optional)
+  - List of mod IDs to attempt to patch after.
+
+The `before`/`after` fields can be used to help resolve conflicts with other mods.
+
+```lua title="Example"
+function patch_player_script(ctx, src)
+  -- ...
+end
+
+GDPatch.patch_script_as_text("Scripts/Player.gd", patch_player_script, {
+  before = { "conflicting_mod_id" },
+  after = { "another_conflicting_mod_id" }
+})
+```
+
+### `VariantType`
+
+One of the following strings:
+
+- `Nil`
+- `Bool`
+- `Int`
+- `Float`
+- `String`
+- `Vector2`
+- `Vector2i`
+- `Rect2`
+- `Rect2i`
+- `Vector3`
+- `Vector3i`
+- `Transform2d`
+- `Vector4`
+- `Vector4i`
+- `Plane`
+- `Quaternion`
+- `Aabb`
+- `Basis`
+- `Transform3d`
+- `Projection`
+- `Color`
+- `StringName`
+- `NodePath`
+- `Rid`
+- `Object`
+- `Callable`
+- `Signal`
+- `Dictionary`
+- `Array`
+- `PackedByteArray`
+- `PackedInt32Array`
+- `PackedInt64Array`
+- `PackedFloat32Array`
+- `PackedFloat64Array`
+- `PackedStringArray`
+- `PackedVector2Array`
+- `PackedVector3Array`
+- `PackedColorArray`
+- `PackedVector4Array`
+
+### `ContainerType`
+
+One of the following tables:
+
+- `{ type: "None" }`
+- `{ type: "Builtin", value: VariantType }`
+- `{ type: "ClassName", value: string }`
+- `{ type: "Script", value: string }`
+
+## Variants
+
+Lua primitives are automatically encoded as their Godot counterparts (`nil`, `boolean`, `number`, `string`). Other variants can be created with the `gdpatch.variant` module:
+
+```lua
+local variant = require("gdpatch.variant")
+local vec = variant.Vector3(0, 0, 0)
+```
+
+### `Vector2`
+
+- Constructor: `Vector2(x: number, y: number)`
+- `x`: `number`
+- `y`: `number`
+
+### `Vector2i`
+
+- Constructor: `Vector2i(x: number, y: number)`
+- `x`: `number`
+- `y`: `number`
+
+### `Rect2`
+
+- Constructor: `Rect2(position: Vector2, size: Vector2)`
+- `position`: `Vector2`
+- `size`: `Vector2`
+
+### `Rect2i`
+
+- Constructor: `Rect2i(position: Vector2i, size: Vector2i)`
+- `position`: `Vector2i`
+- `size`: `Vector2i`
+
+### `Vector3`
+
+- Constructor: `Vector3(x: number, y: number, z: number)`
+- `x`: `number`
+- `y`: `number`
+- `z`: `number`
+
+### `Vector3i`
+
+- Constructor: `Vector3i(x: number, y: number, z: number)`
+- `x`: `number`
+- `y`: `number`
+- `z`: `number`
+
+### `Transform2D`
+
+- Constructor: `Transform2D(x: Vector2, y: Vector2, origin: Vector2)`
+- `x`: `Vector2`
+- `y`: `Vector2`
+- `origin`: `Vector2`
+
+### `Vector4`
+
+- Constructor: `Vector4(x: number, y: number, z: number, w: number)`
+- `x`: `number`
+- `y`: `number`
+- `z`: `number`
+- `w`: `number`
+
+### `Vector4i`
+
+- Constructor: `Vector4i(x: number, y: number, z: number, w: number)`
+- `x`: `number`
+- `y`: `number`
+- `z`: `number`
+- `w`: `number`
+
+### `Plane`
+
+- Constructor: `Plane(normal: Vector3, d: number)`
+- `normal`: `Vector3`
+- `d`: `number`
+
+### `Quaternion`
+
+- Constructor: `Quaternion(x: number, y: number, z: number, w: number)`
+- `x`: `number`
+- `y`: `number`
+- `z`: `number`
+- `w`: `number`
+
+### `AABB`
+
+- Constructor: `AABB(position: Vector3, size: Vector3)`
+- `position`: `Vector3`
+- `size`: `Vector3`
+
+### `Basis`
+
+- Constructor: `Basis(x: Vector3, y: Vector3, z: Vector3)`
+- `x`: `Vector3`
+- `y`: `Vector3`
+- `z`: `Vector3`
+
+### `Transform3D`
+
+- Constructor: `Transform3D(basis: Basis, origin: Vector3)`
+- `basis`: `Basis`
+- `origin`: `Vector3`
+
+### `Projection`
+
+- Constructor: `Projection(x: Vector4, y: Vector4, z: Vector4, w: Vector4)`
+- `x`: `Vector4`
+- `y`: `Vector4`
+- `z`: `Vector4`
+- `w`: `Vector4`
+
+### `Color`
+
+- Constructor: `Color(r: number, g: number, b: number, a: number)`
+- `r`: `number`
+- `g`: `number`
+- `b`: `number`
+- `a`: `number`
+
+### `StringName`
+
+- Constructor: `StringName(value: string)`
+- `value`: `string`
+
+### `NodePath`
+
+- Constructor: `NodePath(value: string)`
+- `value`: `string`
+
+### `RID`
+
+- Constructor: `RID(id: number)`
+- `id`: `number`
+
+### `Object`
+
+- Constructor: `Object(id: number)`
+- Constructor: `Object(class_name: string, properties?: { [string]: Variant })`
+- `id`: `number` (optional)
+- `class`: `string` (optional)
+- `properties`: `{ [string]: Variant }` (optional)
+
+### `Callable`
+
+- Constructor: `Callable()`
+
+### `Signal`
+
+- Constructor: `Signal(object_id: number, name: string)`
+- `object_id`: `number`
+- `name`: `string`
+
+### `Dictionary`
+
+- Constructor: `Dictionary()`
+- `key_type`: `ContainerType`
+- `value_type`: `ContainerType`
+- `value`: `{ [Variant]: Variant }`
+
+### `Array`
+
+- Constructor: `Array()`
+- `element_type`: `ContainerType`
+- `value`: `Variant[]`
+
+### `PackedByteArray`
+
+- Constructor: `PackedByteArray()`
+- `value`: `number[]`
+
+### `PackedInt32Array`
+
+- Constructor: `PackedInt32Array()`
+- `value`: `number[]`
+
+### `PackedInt64Array`
+
+- Constructor: `PackedInt64Array()`
+- `value`: `number[]`
+
+### `PackedFloat32Array`
+
+- Constructor: `PackedFloat32Array()`
+- `value`: `number[]`
+
+### `PackedFloat64Array`
+
+- Constructor: `PackedFloat64Array()`
+- `value`: `number[]`
+
+### `PackedStringArray`
+
+- Constructor: `PackedStringArray()`
+- `value`: `string[]`
+
+### `PackedVector2Array`
+
+- Constructor: `PackedVector2Array()`
+- `value`: `Vector2[]`
+
+### `PackedVector3Array`
+
+- Constructor: `PackedVector3Array()`
+- `value`: `Vector3[]`
+
+### `PackedColorArray`
+
+- Constructor: `PackedColorArray()`
+- `value`: `Color[]`
+
+### `PackedVector4Array`
+
+- Constructor: `PackedVector4Array()`
+- `value`: `Vector4[]`

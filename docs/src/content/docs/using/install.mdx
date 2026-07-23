@@ -1,0 +1,37 @@
+---
+title: Installation
+sidebar:
+  order: 1.0
+---
+import IconLinkCard from "@/components/IconLinkCard.astro";
+import { CardGrid } from "@astrojs/starlight/components";
+import WIP from "@/snippets/WIP.mdx";
+
+<WIP />
+
+Pick the operating system you're using:
+
+<IconLinkCard
+  title="Windows"
+  href="/using/install/windows"
+  icon="seti:windows"
+/>
+<IconLinkCard
+  title="macOS"
+  href="/using/install/macos"
+  icon="apple"
+/>
+<CardGrid>
+  <IconLinkCard
+    title="Linux"
+    href="/using/install/linux"
+    icon="linux"
+    description="For games running natively (usually with a *.x86_64 suffix)"
+  />
+  <IconLinkCard
+    title="Linux (Wine/Proton)"
+    href="/using/install/wine"
+    icon="linux"
+    description="For games running under Wine, e.g. Proton/Lutris/Bottles"
+  />
+</CardGrid>

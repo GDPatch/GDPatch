@@ -1,0 +1,33 @@
+[package]
+name = "gdpatch-loader"
+description = "Loads GDPatch into the game process"
+version = "0.1.0"
+publish = false
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[lib]
+crate-type = ["cdylib"]
+
+[build-dependencies]
+color-eyre.workspace = true
+indexmap.workspace = true
+
+[dependencies]
+gdpatch.workspace = true
+tracing.workspace = true
+color-eyre.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+ctor.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+retour.workspace = true
+once_cell.workspace = true
+
+[target.'cfg(windows)'.dependencies.windows]
+workspace = true
+features = [
+    "Win32_System_SystemInformation",
+]

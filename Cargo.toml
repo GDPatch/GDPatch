@@ -1,0 +1,65 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+
+# Improves performance for `color-eyre` error reporting.
+[profile.dev.package.backtrace]
+opt-level = 3
+
+[workspace.dependencies]
+gdpatch = { path = "crates/gdpatch" }
+filesilly = { path = "crates/filesilly" }
+gdpatch-godot = { path = "crates/gdpatch-godot" }
+
+thiserror = "2.0.12"
+color-eyre = "0.6.5"
+
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tracing-appender = "0.2.3"
+tracing-error = "0.2.1"
+
+byteorder = "1.5.0"
+dunce = "1.0.5"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.149"
+figment = { version = "0.10.19", features = ["toml", "env"] }
+toml = "1.1.2"
+toml_edit = { version = "0.25.3", features = ["serde"] }
+documented = "0.9.1"
+parking_lot = { version = "0.12.5", features = ["deadlock_detection"] }
+unicode-xid = "0.2.6"
+ordered-float = "5.1.0"
+ruzstd = "0.8.2"
+libtest-mimic = "0.8.2"
+walkdir = "2.5.0"
+memmap2 = "0.9.10"
+pretty_assertions = "1.4.1"
+mlua = { version = "0.12.0", features = ["lua55", "vendored", "serde", "send", "macros"] }
+zmij = "1.0.21"
+indexmap = { version = "2.14.0", features = ["serde"] }
+include_dir = "0.7.4"
+once_cell = "1.21.4"
+
+windows = { version = "0.62.2", features = [
+  "Win32_System_SystemServices",
+  "Win32_System_Threading",
+  "Win32_System_ProcessStatus",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Console",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_Security",
+  "Wdk_Foundation",
+  "Win32_System_WindowsProgramming",
+  "Wdk_Storage_FileSystem",
+  "Wdk_System_SystemServices",
+] }
+retour = { version = "0.4.0-alpha.4", features = ["static-detour"] }
+ctor = "0.6.3"
+libc = "0.2.182"

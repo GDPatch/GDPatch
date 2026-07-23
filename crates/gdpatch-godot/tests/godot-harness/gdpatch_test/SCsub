@@ -1,0 +1,17 @@
+import version
+Import('env')
+
+gdpatch_test_src = [
+    'register_types.cpp', 'tokenizer.cpp', 'gdpatch_os.cpp', 'gdpatch_json.cpp'
+]
+
+if env['platform'] == 'windows':
+    gdpatch_test_src.append('platform/os_windows.cpp')
+
+elif env['platform'] == 'linuxbsd':
+    gdpatch_test_src.append('platform/os_linuxbsd.cpp')
+
+if version.major == 4 and version.minor >= 3:
+    env.Append(CPPDEFINES=['GDPATCH_HAS_TOKENIZER_BUFFER'])
+
+env.add_source_files(env.modules_sources, gdpatch_test_src)

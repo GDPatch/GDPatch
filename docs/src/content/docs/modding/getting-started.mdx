@@ -1,0 +1,101 @@
+---
+title: Getting started
+description: Create your own GDPatch mods
+sidebar:
+  order: 1
+---
+import { FileTree, Aside } from "@astrojs/starlight/components";
+import WIP from "@/snippets/WIP.mdx";
+
+<WIP />
+
+Make sure you've [installed GDPatch](/using/install) and started the game at least once before continuing.
+
+## Mod structure
+
+GDPatch mods are located in the `GDPatch/mods` folder. Each mod has its own folder with a `gdpatch_mod.toml` containing info about the mod (like a unique mod ID). The mod folder name should match the mod ID, though it is not required.
+
+<FileTree>
+  - GDPatch
+    - mods
+      - example_mod
+        - **gdpatch_mod.toml**
+        - patcher.lua
+        - data.pck
+  - game.exe
+</FileTree>
+
+### `gdpatch_mod.toml`
+
+**This file is required.**
+
+This file contains metadata about the mod. Every field except the mod ID is optional. Here's an example:
+
+```toml
+# A unique ID for this mod. Mod IDs should use snake case (all lowercase, with spaces replaced with underscores).
+# This is the only required field in the mod info.
+id = "example_mod"
+
+# Optional metadata for the mod.
+# These fields are not used by GDPatch directly, but may be used by other mods (e.g. config UIs).
+# If you publish your mod online, we suggest making sure these values are in sync with your mod page.
+[meta]
+name = "Example Mod" # Pretty name for this mod.
+version = "1.0.0" # Version number. No strict format is imposed on this, but it should be obvious to users.
+authors = ["You!"] # A list of mod authors.
+description = "Patches scripts versatilely." # A short description of what this mod does.
+
+# Optional metadata for the mod's config options. Config options are referenced by a section ID and option ID.
+[config.section_id]
+# The "meta" option ID is reserved to represent metadata about the section itself.
+meta.description = "Section description name"
+
+[config.section_id.option_id]
+name = "Option name" # Pretty name for this option.
+description = "Option description" # Description for this option.
+hidden = false # Whether to hide all comments for this option. Defaults to false.
+
+# The default value for this option.
+# The default value will not be written to the config file directly, but will be returned by the config APIs and displayed in comments.
+default = ":3"
+
+# Type for this option, to be used as a hint for custom config editors.
+# GDPatch does not perform any type checking, and the value saved in this option may not match the type.
+# Supported values: string, number, boolean, array, table
+type = "string"
+```
+
+### `patcher.lua`
+
+This file is optional.
+
+A Lua script that can patch existing game scripts. For more information, [see the dedicated page](/modding/patcher).
+
+### `data.pck`
+
+This file is optional.
+
+A standard Godot pack file that will be loaded into the game. Contents of this pack file will be overlayed onto the game's pack file at runtime. You can create these files by exporting them from your own project in the Godot editor.
+
+Assets that already exist in the game will be silently replaced. You cannot replace game scripts with this method; please use [the patcher API](/modding/patcher) if you wish to modify game code.
+
+To avoid conflicting with other mods, your mod assets should be contained within the folder `res://gdpatch/mods/(your mod ID)`. On startup, GDPatch will load a `mod.tscn` or `mod.gd` in your mod folder if it exists, as a child of [the GDPatch autoload](/modding/gdscript).
+
+<FileTree>
+  - res://
+    - gdpatch
+      - mods
+        - example_mod
+          - **mod.tscn** # will be loaded directly
+          - **mod.gd** # will be attached to a new Node
+</FileTree>
+
+## Helpful tools
+
+We suggest using some other tools from the Godot modding community to help develop your mods:
+
+### Godot RE Tools
+
+[Godot RE Tools](https://github.com/GDRETools/gdsdecomp) can decompile game projects, allowing you to open it in the Godot editor and view the game's source code. Keep in mind the decompiled scripts are not 1:1 to GDPatch's output, so formatting and line numbers may differ.
+
+You can work on a GDPatch mod from within a decompiled project. Create an export preset in the Export menu, configure "Resources > Export Mode" to only export your mod, and press "Export PCK/ZIP". **Keep in mind to never distribute original game files in your mod's pack**, and be careful about Godot including game files in your pack file as a dependency!

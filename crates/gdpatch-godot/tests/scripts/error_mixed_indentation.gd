@@ -1,0 +1,3 @@
+    spaces
+	tabs
+	    mixed

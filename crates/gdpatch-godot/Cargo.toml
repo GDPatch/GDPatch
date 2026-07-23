@@ -1,0 +1,36 @@
+[package]
+name = "gdpatch-godot"
+description = "Parsers for Godot file formats"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[[test]]
+name = "compare-with-godot"
+path = "tests/godot-harness/src/main.rs"
+harness = false
+test = false
+
+[dependencies]
+ordered-float.workspace = true
+unicode-xid.workspace = true
+thiserror.workspace = true
+ruzstd.workspace = true
+serde = { workspace = true, features = ["derive"] }
+toml.workspace = true
+color-eyre.workspace = true
+byteorder.workspace = true
+tracing.workspace = true
+zmij.workspace = true
+indexmap.workspace = true
+
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true
+libtest-mimic.workspace = true
+color-eyre.workspace = true
+walkdir.workspace = true
+pretty_assertions.workspace = true

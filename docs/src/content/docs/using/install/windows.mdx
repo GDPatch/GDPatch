@@ -1,0 +1,20 @@
+---
+title: Installation (Windows)
+sidebar:
+  hidden: true
+---
+import { Steps, Aside } from "@astrojs/starlight/components";
+
+<Steps>
+1. [Download the latest release of GDPatch](https://github.com/GDPatch/GDPatch/releases/latest/download/gdpatch_loader.dll).
+2. Copy `gdpatch_loader.dll` next to your game install and rename it to `winmm.dll`.
+3. Start the game.
+</Steps>
+
+<Aside>
+  Some antivirus software (like Microsoft Defender) will flag GDPatch as a false positive. You may need to explicitly
+  allow `winmm.dll` in your antivirus software.
+
+  These false positives are triggered because GDPatch performs filesystem-level hooking for the Godot engine, which is
+  also often used in malicious applications. Rest assured that **GDPatch is safe and is not malware**.
+</Aside>

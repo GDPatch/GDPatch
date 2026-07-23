@@ -1,0 +1,4 @@
+:root {
+  --sl-color-accent: #478cbf !important;
+  --sl-color-accent-high: var(--sl-color-accent);
+}

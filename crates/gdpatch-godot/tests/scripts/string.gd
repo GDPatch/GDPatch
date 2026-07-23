@@ -1,0 +1,16 @@
+r"raw"
+&"name"
+^"node"
+"""
+multi "line
+"""
+r"\a"
+r"\\"
+r"\""
+"\a\b\f\n\r\t\v\'\"\\"
+"\u1aFB"
+"\U01F40E"
+"\uXZXW"
+"\k"
+"\
+"
