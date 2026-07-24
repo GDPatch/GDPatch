@@ -3,11 +3,17 @@ title: Installation (Wine/Proton)
 sidebar:
   hidden: true
 ---
-import { Steps } from "@astrojs/starlight/components";
+import { Steps, FileTree } from "@astrojs/starlight/components";
 
 <Steps>
 1. [Download the latest release of GDPatch](https://github.com/GDPatch/GDPatch/releases/latest/download/gdpatch_loader.dll).
-2. Copy `gdpatch_loader.dll` next to your game install and rename it to `winmm.dll`.
+2. Copy `gdpatch_loader.dll` into your game install and rename it to `winmm.dll`.
+
+   <FileTree>
+    - game.exe
+    - **winmm.dll**
+   </FileTree>
+
 3. Set the environment variable `WINEDLLOVERRIDES="winmm=n,b"`. In Steam, this can be represented as `WINEDLLOVERRIDES="winmm=n,b" %command%` in the launch options.
 4. Start the game.
 </Steps>

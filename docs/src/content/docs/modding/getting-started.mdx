@@ -90,6 +90,18 @@ To avoid conflicting with other mods, your mod assets should be contained within
           - **mod.gd** # will be attached to a new Node
 </FileTree>
 
+Alternatively, you can just create a "loose" `data` folder in your mod folder. This is easier to work with if you're just writing GDScript and aren't bundling any assets:
+
+<FileTree>
+- data
+  - gdpatch
+    - mods
+      - example_mod
+        - mod.gd
+- gdpatch_mod.toml
+- patcher.lua
+</FileTree>
+
 ## Helpful tools
 
 We suggest using some other tools from the Godot modding community to help develop your mods:
