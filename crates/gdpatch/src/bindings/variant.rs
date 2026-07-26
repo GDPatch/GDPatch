@@ -1468,10 +1468,10 @@ impl LuaArray {
     const NAME: &str = "Array";
 
     #[lua(meta)]
-    fn __call(lua: &Lua, _: Value) -> mlua::Result<Self> {
+    fn __call(lua: &Lua, value: Option<mlua::Table>) -> mlua::Result<Self> {
         Ok(Self {
             element_type: LuaContainerType(ContainerType::None),
-            value: lua.create_table()?,
+            value: value.map_or_else(|| lua.create_table(), Ok)?,
         })
     }
 
@@ -1528,8 +1528,8 @@ impl LuaPackedByteArray {
     const NAME: &str = "PackedByteArray";
 
     #[lua(meta)]
-    fn __call(lua: &Lua, _: Value) -> mlua::Result<Self> {
-        Ok(Self(lua.create_table()?))
+    fn __call(lua: &Lua, _: Value, value: Option<mlua::Table>) -> mlua::Result<Self> {
+        Ok(Self(value.map_or_else(|| lua.create_table(), Ok)?))
     }
 
     #[lua(meta, field, infallible)]
@@ -1575,8 +1575,8 @@ impl LuaPackedInt32Array {
     const NAME: &str = "PackedInt32Array";
 
     #[lua(meta)]
-    fn __call(lua: &Lua, _: Value) -> mlua::Result<Self> {
-        Ok(Self(lua.create_table()?))
+    fn __call(lua: &Lua, _: Value, value: Option<mlua::Table>) -> mlua::Result<Self> {
+        Ok(Self(value.map_or_else(|| lua.create_table(), Ok)?))
     }
 
     #[lua(meta, field, infallible)]
@@ -1622,8 +1622,8 @@ impl LuaPackedInt64Array {
     const NAME: &str = "PackedInt64Array";
 
     #[lua(meta)]
-    fn __call(lua: &Lua, _: Value) -> mlua::Result<Self> {
-        Ok(Self(lua.create_table()?))
+    fn __call(lua: &Lua, _: Value, value: Option<mlua::Table>) -> mlua::Result<Self> {
+        Ok(Self(value.map_or_else(|| lua.create_table(), Ok)?))
     }
 
     #[lua(meta, field, infallible)]
@@ -1674,8 +1674,8 @@ impl LuaPackedFloat32Array {
     const NAME: &str = "PackedFloat32Array";
 
     #[lua(meta)]
-    fn __call(lua: &Lua, _: Value) -> mlua::Result<Self> {
-        Ok(Self(lua.create_table()?))
+    fn __call(lua: &Lua, _: Value, value: Option<mlua::Table>) -> mlua::Result<Self> {
+        Ok(Self(value.map_or_else(|| lua.create_table(), Ok)?))
     }
 
     #[lua(meta, field, infallible)]
@@ -1726,8 +1726,8 @@ impl LuaPackedFloat64Array {
     const NAME: &str = "PackedFloat64Array";
 
     #[lua(meta)]
-    fn __call(lua: &Lua, _: Value) -> mlua::Result<Self> {
-        Ok(Self(lua.create_table()?))
+    fn __call(lua: &Lua, _: Value, value: Option<mlua::Table>) -> mlua::Result<Self> {
+        Ok(Self(value.map_or_else(|| lua.create_table(), Ok)?))
     }
 
     #[lua(meta, field, infallible)]
@@ -1773,8 +1773,8 @@ impl LuaPackedStringArray {
     const NAME: &str = "PackedStringArray";
 
     #[lua(meta)]
-    fn __call(lua: &Lua, _: Value) -> mlua::Result<Self> {
-        Ok(Self(lua.create_table()?))
+    fn __call(lua: &Lua, _: Value, value: Option<mlua::Table>) -> mlua::Result<Self> {
+        Ok(Self(value.map_or_else(|| lua.create_table(), Ok)?))
     }
 
     #[lua(meta, field, infallible)]
@@ -1823,8 +1823,8 @@ impl LuaPackedVector2Array {
     const NAME: &str = "PackedVector2Array";
 
     #[lua(meta)]
-    fn __call(lua: &Lua, _: Value) -> mlua::Result<Self> {
-        Ok(Self(lua.create_table()?))
+    fn __call(lua: &Lua, _: Value, value: Option<mlua::Table>) -> mlua::Result<Self> {
+        Ok(Self(value.map_or_else(|| lua.create_table(), Ok)?))
     }
 
     #[lua(meta, field, infallible)]
@@ -1873,8 +1873,8 @@ impl LuaPackedVector3Array {
     const NAME: &str = "PackedVector3Array";
 
     #[lua(meta)]
-    fn __call(lua: &Lua, _: Value) -> mlua::Result<Self> {
-        Ok(Self(lua.create_table()?))
+    fn __call(lua: &Lua, _: Value, value: Option<mlua::Table>) -> mlua::Result<Self> {
+        Ok(Self(value.map_or_else(|| lua.create_table(), Ok)?))
     }
 
     #[lua(meta, field, infallible)]
@@ -1923,8 +1923,8 @@ impl LuaPackedColorArray {
     const NAME: &str = "PackedColorArray";
 
     #[lua(meta)]
-    fn __call(lua: &Lua, _: Value) -> mlua::Result<Self> {
-        Ok(Self(lua.create_table()?))
+    fn __call(lua: &Lua, _: Value, value: Option<mlua::Table>) -> mlua::Result<Self> {
+        Ok(Self(value.map_or_else(|| lua.create_table(), Ok)?))
     }
 
     #[lua(meta, field, infallible)]
@@ -1973,8 +1973,8 @@ impl LuaPackedVector4Array {
     const NAME: &str = "PackedVector4Array";
 
     #[lua(meta)]
-    fn __call(lua: &Lua, _: Value) -> mlua::Result<Self> {
-        Ok(Self(lua.create_table()?))
+    fn __call(lua: &Lua, _: Value, value: Option<mlua::Table>) -> mlua::Result<Self> {
+        Ok(Self(value.map_or_else(|| lua.create_table(), Ok)?))
     }
 
     #[lua(meta, field, infallible)]
