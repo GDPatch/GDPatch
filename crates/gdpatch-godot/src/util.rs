@@ -53,3 +53,15 @@ where
         )
     }
 }
+
+#[macro_export]
+macro_rules! do_while {
+    ($body:tt while $cond:expr) => {{
+        let mut __first = true;
+
+        while (__first || ($cond)) {
+            __first = false;
+            $body
+        }
+    }};
+}

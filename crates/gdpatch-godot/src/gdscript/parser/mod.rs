@@ -2,6 +2,7 @@
 //! This parser skips some behavior that the upstream parser performs, notably completion contexts and annotation validation.
 
 use crate::build::GDScriptV2Build;
+use crate::do_while;
 use crate::gdscript::parser::node::{
     AnnotationNode, ArrayNode, ArrayPattern, AssertNode, AssignmentNode, AssignmentOperation,
     AwaitNode, BinaryOpNode, BinaryOperation, BreakNode, BreakpointNode, CallNode, CastNode,
@@ -1000,7 +1001,7 @@ impl Parser<'_> {
             self.push_multiline(true);
             self.advance();
 
-            loop {
+            do_while!({
                 if matches!(self.current.0, Token::ParenthesisClose) {
                     // Allow for trailing comma.
                     break;
@@ -1030,17 +1031,14 @@ impl Parser<'_> {
                         .parameters
                         .insert(identifier_name, parameter);
                 }
-
+            } while {
                 if matches!(self.current.0, Token::Comma) {
                     self.advance();
-
-                    if self.is_at_end() {
-                        break;
-                    }
+                    !self.is_at_end()
                 } else {
-                    break;
+                    false
                 }
-            }
+            });
 
             self.pop_multiline();
             self.consume(
@@ -1114,7 +1112,7 @@ impl Parser<'_> {
         if !matches!(self.current.0, Token::ParenthesisClose) && !self.is_at_end() {
             let mut default_used = false;
 
-            loop {
+            do_while!({
                 if matches!(self.current.0, Token::ParenthesisClose) {
                     // Allow for trailing comma.
                     break;
@@ -1175,13 +1173,14 @@ impl Parser<'_> {
                         .insert(identifier_name, parameter);
                     //: p_body->add_local(parameter, current_function);
                 }
-
+            } while {
                 if matches!(self.current.0, Token::Comma) {
                     self.advance();
+                    true
                 } else {
-                    break;
+                    false
                 }
-            }
+            });
         }
 
         self.pop_multiline();
@@ -1266,7 +1265,7 @@ impl Parser<'_> {
         self.reset_span(suite, self.current.1);
 
         let mut error_count = 0;
-        loop {
+        do_while!({
             if self.is_at_end()
                 || (!multiline
                     && self.previous().0.typ() == TokenType::Semicolon
@@ -1317,15 +1316,12 @@ impl Parser<'_> {
                     break;
             }
             */
-
-            if !((multiline || self.previous().0.typ() == TokenType::Semicolon)
+        } while {
+            (multiline || self.previous().0.typ() == TokenType::Semicolon)
                 && self.current.0.typ() != TokenType::Dedent
                 && !self.lambda_ended
-                && !self.is_at_end())
-            {
-                break;
-            }
-        }
+                && !self.is_at_end()
+        });
 
         drop(guard);
 
@@ -1830,7 +1826,7 @@ impl Parser<'_> {
 
         let mut has_bind = false;
 
-        loop {
+        do_while!({
             let Some(pattern) = self.parse_match_pattern(None) else {
                 continue;
             };
@@ -1854,13 +1850,14 @@ impl Parser<'_> {
             }
 
             self.node_pool[branch].patterns.push(pattern);
-
+        } while {
             if matches!(self.current.0, Token::Comma) {
                 self.advance();
+                true
             } else {
-                break;
+                false
             }
-        }
+        });
 
         if self.node_pool[branch].patterns.is_empty() {
             self.push_error(r#"No pattern found for "match" branch."#);
@@ -2012,7 +2009,7 @@ impl Parser<'_> {
 
                 let mut inner = ArrayPattern::default();
 
-                loop {
+                do_while!({
                     if matches!(self.current.0, Token::Eof | Token::BracketClose) {
                         break;
                     }
@@ -2035,13 +2032,14 @@ impl Parser<'_> {
                     }
 
                     inner.elements.push(sub_pattern);
-
+                } while {
                     if matches!(self.current.0, Token::Comma) {
                         self.advance();
+                        true
                     } else {
-                        break;
+                        false
                     }
-                }
+                });
 
                 self.consume(
                     TokenType::BracketClose,
@@ -2065,7 +2063,7 @@ impl Parser<'_> {
 
                 let mut inner = DictionaryPattern::default();
 
-                loop {
+                do_while!({
                     if matches!(self.current.0, Token::Eof | Token::BraceClose) {
                         break;
                     }
@@ -2124,13 +2122,14 @@ impl Parser<'_> {
                                 .push(DictionaryPatternEntry { key, value: None });
                         }
                     }
-
+                } while {
                     if matches!(self.current.0, Token::Comma) {
-                        self.advance()
+                        self.advance();
+                        true
                     } else {
-                        break;
+                        false
                     }
-                }
+                });
 
                 self.consume(
                     TokenType::BraceClose,
@@ -2325,7 +2324,7 @@ impl Parser<'_> {
 
         let mut elements: HashMap<StringName, usize> = HashMap::new();
 
-        loop {
+        do_while!({
             if matches!(self.current.0, Token::BraceClose) {
                 break; // Allow trailing comma.
             }
@@ -2390,13 +2389,14 @@ impl Parser<'_> {
             } else {
                 self.push_error("Expected identifier for enum key.");
             }
-
-            if matches!(self.current.0, Token::Comma) {
+        } while {
+             if matches!(self.current.0, Token::Comma) {
                 self.advance();
+                true
             } else {
-                break;
+                false
             }
-        }
+        });
 
         self.pop_multiline();
         self.consume(TokenType::BraceClose, r#"Expected closing "}" for enum."#);
@@ -2665,23 +2665,24 @@ impl Parser<'_> {
                 if !matches!(self.current.0, Token::ParenthesisClose) && !self.is_at_end() {
                     self.push_multiline(true);
 
-                    loop {
+                    do_while!({
                         let Some(argument) = self.parse_expression(false, false) else {
                             valid = false;
                             continue;
                         };
 
                         self.node_pool[node].arguments.push(argument);
-
+                    } while {
                         if matches!(self.current.0, Token::Comma) {
                             self.advance();
+                            true
                         } else {
-                            break;
+                            false
                         }
-                    }
+                    });
                 }
             } else {
-                loop {
+                do_while!({
                     if matches!(self.current.0, Token::ParenthesisClose) {
                         // Allow for trailing comma.
                         break;
@@ -2701,13 +2702,14 @@ impl Parser<'_> {
                             valid = false;
                         }
                     }
-
+                } while {
                     if matches!(self.current.0, Token::Comma) {
                         self.advance();
+                        true
                     } else {
-                        break;
+                        false
                     }
-                }
+                });
             }
 
             self.pop_multiline();
@@ -2852,7 +2854,7 @@ impl Parser<'_> {
             let mut first_pass = true;
             let mut return_none = false;
 
-            loop {
+            do_while!({
                 let container_type = self.parse_type(false); // Don't allow void for element type.
 
                 match container_type {
@@ -2875,13 +2877,14 @@ impl Parser<'_> {
                 }
 
                 first_pass = false;
-
+            } while {
                 if matches!(self.current.0, Token::Comma) {
                     self.advance();
+                    true
                 } else {
-                    break;
+                    false
                 }
-            }
+            });
 
             self.consume(
                 TokenType::BracketClose,
@@ -3098,7 +3101,7 @@ impl Parser<'_> {
         let mut path_state = PathState::Start;
         let mut full_path = String::new();
 
-        loop {
+        do_while!({
             if matches!(self.previous().0, Token::Percent) {
                 if !matches!(path_state, PathState::Start | PathState::Slash) {
                     self.push_error(r#""%" is only valid in the beginning of a node name (either after "$" or after "/")"#);
@@ -3156,13 +3159,14 @@ impl Parser<'_> {
 
                 return None;
             }
-
+        } while {
             if matches!(self.current.0, Token::Slash | Token::Percent) {
                 self.advance();
+                true
             } else {
-                break;
+                false
             }
-        }
+        });
 
         self.node_pool[node].full_path = full_path;
         Some(node.upcast())
@@ -3556,8 +3560,8 @@ impl Parser<'_> {
             }
         }
 
-        // Arguments
-        loop {
+        // Arguments.
+        do_while!({
             if matches!(self.current.0, Token::ParenthesisClose) {
                 // Allow for trailing comma.
                 break;
@@ -3568,13 +3572,14 @@ impl Parser<'_> {
             } else {
                 self.push_error(r#"Expected expression as the function argument."#);
             }
-
+        } while {
             if matches!(self.current.0, Token::Comma) {
                 self.advance();
+                true
             } else {
-                break;
+                false
             }
-        }
+        });
 
         self.pop_multiline();
         self.consume(
@@ -3593,7 +3598,7 @@ impl Parser<'_> {
         let (node, _guard) = self.alloc_node::<ArrayNode>();
 
         if !matches!(self.current.0, Token::BracketClose) {
-            loop {
+            do_while!({
                 if matches!(self.current.0, Token::BracketClose) {
                     // Allow for trailing comma.
                     break;
@@ -3604,17 +3609,14 @@ impl Parser<'_> {
                 } else {
                     self.push_error("Expected expression as array element.");
                 }
-
+            } while {
                 if matches!(self.current.0, Token::Comma) {
                     self.advance();
-
-                    if self.is_at_end() {
-                        break;
-                    }
+                    !self.is_at_end()
                 } else {
-                    break;
+                    false
                 }
-            }
+            });
         }
 
         self.pop_multiline();
@@ -3657,7 +3659,7 @@ impl Parser<'_> {
         let mut decided_style = false;
 
         if !matches!(self.current.0, Token::BraceClose) {
-            loop {
+            do_while!({
                 if matches!(self.current.0, Token::BraceClose) {
                     break;
                 }
@@ -3767,17 +3769,14 @@ impl Parser<'_> {
 
                     (None, None) => {}
                 }
-
+            } while {
                 if matches!(self.current.0, Token::Comma) {
                     self.advance();
-
-                    if matches!(self.current.0, Token::Eof) {
-                        break;
-                    }
+                    !self.is_at_end()
                 } else {
-                    break;
+                    false
                 }
-            }
+            });
         }
 
         self.pop_multiline();
