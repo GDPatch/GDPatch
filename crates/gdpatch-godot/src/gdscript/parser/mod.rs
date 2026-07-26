@@ -3358,7 +3358,7 @@ impl Parser<'_> {
                 self.current.0,
                 Token::Dedent | Token::Indent | Token::Newline { .. }
             ) {
-                self.current = self.advance_inner(false);
+                self.current = self.advance_inner(true);
             }
 
             let difference = self.tokenizer.pop_expression_indented_block();
