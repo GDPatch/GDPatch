@@ -1,5 +1,10 @@
+# TODO: create a release?
 name: Build
-on: [push, pull_request]
+#on: [push, pull_request]
+on:
+  push:
+    tags:
+      - "v*"
 
 jobs:
   build:
@@ -10,9 +15,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            filename: gdpatch_loader.dll
+          #- target: x86_64-pc-windows-msvc
+          #  os: windows-latest
+          #  filename: gdpatch_loader.dll
 
           - target: x86_64-pc-windows-gnu
             os: ubuntu-latest
@@ -22,9 +27,9 @@ jobs:
             os: ubuntu-latest
             filename: libgdpatch_loader.so
 
-          #- target: aarch64-apple-darwin
-          #  os: macos-latest
-          #  filename: libgdpatch_loader.dylib
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            filename: libgdpatch_loader.dylib
 
           #- target: x86_64-apple-darwin
           #  os: macos-latest
