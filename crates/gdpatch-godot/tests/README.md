@@ -15,7 +15,7 @@ Using a faster linker (such as [mold](https://github.com/rui314/mold)) helps wit
 
 Set the `GDPATCH_TEST_GODOT` environment variable to the path to your newly built Godot template.
 Make sure you point to the console binary (ending `.console.exe`) if you are on Windows. Then you can run the test suite
-with `cargo test --package gdpatch-godot --test difftest`. It's recommended to run with 
+with `cargo test --package gdpatch-godot --test compare-with-godot`. It's recommended to run with 
 [`cargo-llvm-cov`](https://crates.io/crates/cargo-llvm-cov) to get coverage reports.
 
 You can set the `GDPATCH_TEST_CORPUS` environment variable to a different location to run tests on a different corpus. 
