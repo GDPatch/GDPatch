@@ -494,33 +494,6 @@ impl GDPatch {
                 error!(?err, "failed to patch script");
             }
 
-            // Patch project settings.
-            if normalized_path == ProjectSettings::PROJECT_SETTINGS_FILENAME {
-                let result = try {
-                    match callbacks.patch_project_settings(project_settings.clone()) {
-                        Ok(patched_settings) => {
-                            let mut patched_data = WritableMarshalBuffer::new(false);
-                            patched_settings.encode(&mut patched_data)?;
-
-                            let patched_data = patched_data.into_inner();
-                            builder.add_file(
-                                path.clone(),
-                                patched_data.len() as u64,
-                                file.hash,
-                                FileContents::Memory(patched_data),
-                            );
-
-                            continue;
-                        }
-                        Err(err) => error!(?err, "failed to patch project settings"),
-                    }
-                };
-
-                if let Err(err) = result {
-                    error!(?err, "failed to patch project settings");
-                }
-            }
-
             if normalized_path == UIDCache::UID_CACHE_PATH {
                 let mut buffer = ReadableMarshalBuffer::new(slice, true);
                 if let Err(err) = uid_cache.merge_decode(&mut buffer) {
@@ -590,6 +563,32 @@ impl GDPatch {
                         contents,
                     );
                 }
+            }
+        }
+
+        // Patch (and overwrite) project settings.
+        // This is done later to enforce a consistent order of operations within the patcher script, making sure all scripts are patched beforehand.
+        {
+            let result = try {
+                match callbacks.patch_project_settings(project_settings.clone()) {
+                    Ok(patched_settings) => {
+                        let mut patched_data = WritableMarshalBuffer::new(false);
+                        patched_settings.encode(&mut patched_data)?;
+
+                        let patched_data = patched_data.into_inner();
+                        builder.add_file(
+                            ensure_path_prefix(ProjectSettings::PROJECT_SETTINGS_FILENAME),
+                            patched_data.len() as u64,
+                            [0u8; 16], // TODO
+                            FileContents::Memory(patched_data),
+                        );
+                    }
+                    Err(err) => error!(?err, "failed to patch project settings"),
+                }
+            };
+
+            if let Err(err) = result {
+                error!(?err, "failed to patch project settings");
             }
         }
 
