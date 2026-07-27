@@ -12,8 +12,10 @@ pub mod project_settings;
 mod string;
 mod util;
 pub mod variant;
+mod uid_cache;
 
 pub use self::marshalling::{ReadableMarshalBuffer, WritableMarshalBuffer};
+pub use self::uid_cache::{UIDCache, UID};
 
 mod private {
     pub trait Sealed {}

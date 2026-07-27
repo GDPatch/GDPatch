@@ -36,7 +36,7 @@ use gdpatch_godot::build::{
     EngineBuilds, GDScriptBuild, SerializedBuildsFile, VersionSpecifier, bundled_builds,
 };
 use gdpatch_godot::pack::Pack;
-use gdpatch_godot::{ReadableMarshalBuffer, WritableMarshalBuffer};
+use gdpatch_godot::{ReadableMarshalBuffer, UIDCache, WritableMarshalBuffer};
 
 static INSTANCE: OnceLock<GDPatch> = OnceLock::new();
 
@@ -385,6 +385,8 @@ impl GDPatch {
             })
             .unwrap_or_default();
 
+        let mut uid_cache = UIDCache::default();
+
         // Rebuild files in the virtual pack.
         for (path, file) in &old_pack.files {
             let normalized_path = if engine_build.has_prefixless_pck_paths {
@@ -514,6 +516,15 @@ impl GDPatch {
                 }
             }
 
+            if normalized_path == UIDCache::UID_CACHE_PATH {
+                let mut buffer = ReadableMarshalBuffer::new(slice, true);
+                if let Err(err) = uid_cache.merge_decode(&mut buffer) {
+                    error!(?err, "failed to decode UID cache");
+                }
+
+                continue;
+            }
+
             // Preserve the original file.
             builder.add_file(path.clone(), file.size, file.hash, contents);
         }
@@ -533,6 +544,13 @@ impl GDPatch {
 
                 for (mut path, contents) in mod_pack.files() {
                     let _entered = info_span!("pack_entry", path = %path).entered();
+
+                    if path.strip_prefix("res://").unwrap_or(&path) == UIDCache::UID_CACHE_PATH {
+                        let mut buffer = ReadableMarshalBuffer::new(contents.as_slice(), true);
+                        if let Err(err) = uid_cache.merge_decode(&mut buffer) {
+                            error!(?err, "failed to decode UID cache");
+                        }
+                    }
 
                     // Add/remove res:// prefix if required.
                     if engine_build.has_prefixless_pck_paths {
@@ -558,6 +576,10 @@ impl GDPatch {
                     }
 
                     trace!("adding modded file");
+                    if path == "project.binary" || path == "res://project.binary" {
+                        warn!("mod PCK contains project settings file, skipping");
+                        continue;
+                    }
 
                     builder.add_file(
                         path.clone(),
@@ -568,6 +590,16 @@ impl GDPatch {
                 }
             }
         }
+
+        // Save UID cache.
+        let mut buffer = WritableMarshalBuffer::new(false);
+        uid_cache.encode(&mut buffer);
+        builder.add_file(
+            UIDCache::UID_CACHE_PATH.to_owned(),
+            buffer.len() as u64,
+            [0u8; 16],
+            FileContents::Memory(buffer.into_inner())
+        );
 
         let virtual_pack = Arc::new(builder.build(header_pos_within_file));
         self.virtual_packs
