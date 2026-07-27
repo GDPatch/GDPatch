@@ -576,6 +576,12 @@ impl GDPatch {
                         continue;
                     }
 
+                    // TODO: Merge the global script class cache.
+                    if normalized_path == ".godot/global_script_class_cache.cfg" {
+                        warn!("skipping global script class cache in mod pack");
+                        continue;
+                    }
+
                     trace!("adding modded file");
                     builder.add_file(
                         path.clone(),
