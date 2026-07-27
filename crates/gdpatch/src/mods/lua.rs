@@ -16,7 +16,7 @@ use mlua::{
 };
 use serde::Deserialize;
 use std::{cmp::Ordering, collections::HashMap, path::PathBuf, sync::Weak};
-use tracing::{error, info, info_span, warn};
+use tracing::{error, info, info_span};
 
 use crate::{GDPatch, bindings::LuaVariant};
 
@@ -311,11 +311,6 @@ struct PatcherPaths(Vec<String>);
 
 impl mlua::FromLua for PatcherPaths {
     fn from_lua(value: Value, lua: &Lua) -> mlua::Result<Self> {
-        let state = lua
-            .app_data_ref::<ModLuaState>()
-            .expect("runtime state should be available");
-        let mod_id = state.mod_id.clone();
-
         let table = if value.is_string() {
             let str = String::from_lua(value, lua)?;
             vec![str.to_string()]
@@ -333,7 +328,6 @@ impl mlua::FromLua for PatcherPaths {
             .iter()
             .map(|path| {
                 if let Some(stripped) = path.strip_prefix("res://") {
-                    warn!(target: "lua", parent: None, mod_id, path, "unnecessary res:// prefix in path");
                     stripped.to_string()
                 } else {
                     path.clone()
