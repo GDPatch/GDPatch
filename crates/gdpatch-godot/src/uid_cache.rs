@@ -1,5 +1,5 @@
-use crate::{ReadableMarshalBuffer, WritableMarshalBuffer};
 use crate::Error::BadData;
+use crate::{ReadableMarshalBuffer, WritableMarshalBuffer};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct UID(pub u64);

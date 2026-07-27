@@ -598,7 +598,7 @@ impl GDPatch {
             UIDCache::UID_CACHE_PATH.to_owned(),
             buffer.len() as u64,
             [0u8; 16],
-            FileContents::Memory(buffer.into_inner())
+            FileContents::Memory(buffer.into_inner()),
         );
 
         let virtual_pack = Arc::new(builder.build(header_pos_within_file));
