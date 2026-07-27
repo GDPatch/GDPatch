@@ -342,6 +342,24 @@ impl GDPatch {
 
             engine_build.clone()
         };
+        let strip_path_prefix = |path: &str| {
+            if engine_build.has_prefixless_pck_paths {
+                path.to_string()
+            } else {
+                path.strip_prefix("res://").unwrap_or(path).to_string()
+            }
+        };
+        let ensure_path_prefix = |path: &str| {
+            if engine_build.has_prefixless_pck_paths {
+                path.strip_prefix("res://").unwrap_or(path).to_string()
+            } else {
+                if path.starts_with("res://") {
+                    path.to_string()
+                } else {
+                    format!("res://{}", path)
+                }
+            }
+        };
 
         let gdscript_build = match &engine_build.gdscript {
             GDScriptBuild::V2(v2) => v2,
@@ -349,15 +367,7 @@ impl GDPatch {
         };
 
         let project_settings = {
-            let path = format!(
-                "{}{}",
-                if engine_build.has_prefixless_pck_paths {
-                    ""
-                } else {
-                    "res://"
-                },
-                ProjectSettings::PROJECT_SETTINGS_FILENAME
-            );
+            let path = ensure_path_prefix(ProjectSettings::PROJECT_SETTINGS_FILENAME);
 
             let file = old_pack
                 .files
@@ -389,12 +399,7 @@ impl GDPatch {
 
         // Rebuild files in the virtual pack.
         for (path, file) in &old_pack.files {
-            let normalized_path = if engine_build.has_prefixless_pck_paths {
-                path
-            } else {
-                &path.strip_prefix("res://").unwrap_or(path).to_string()
-            };
-
+            let normalized_path = strip_path_prefix(path);
             let _entered = debug_span!("pack_entry", path = %normalized_path).entered();
 
             let contents = FileContents::Disk {
@@ -407,7 +412,7 @@ impl GDPatch {
             // Patch scripts.
             let result = try {
                 if self.config.debug.patch_all_scripts
-                    || callbacks.has_patcher_for_script(normalized_path)
+                    || callbacks.has_patcher_for_script(&normalized_path)
                 {
                     let script: Option<(Vec<_>, bool)> = if path.ends_with(".gd") {
                         let source = str::from_utf8(slice).wrap_err("failed to parse utf8")?;
@@ -440,7 +445,7 @@ impl GDPatch {
                     };
 
                     if let Some((tokens, is_binary)) = script {
-                        match callbacks.patch_script(normalized_path, tokens, gdscript_build) {
+                        match callbacks.patch_script(&normalized_path, tokens, gdscript_build) {
                             Ok(mut patched_tokens) => {
                                 let patched_data = if is_binary {
                                     if self.config.debug.patch_all_scripts {
@@ -522,6 +527,7 @@ impl GDPatch {
                     error!(?err, "failed to decode UID cache");
                 }
 
+                // Skip adding UID cache, as it's done later.
                 continue;
             }
 
@@ -545,26 +551,9 @@ impl GDPatch {
                 for (mut path, contents) in mod_pack.files() {
                     let _entered = info_span!("pack_entry", path = %path).entered();
 
-                    if path.strip_prefix("res://").unwrap_or(&path) == UIDCache::UID_CACHE_PATH {
-                        let mut buffer = ReadableMarshalBuffer::new(contents.as_slice(), true);
-                        if let Err(err) = uid_cache.merge_decode(&mut buffer) {
-                            error!(?err, "failed to decode UID cache");
-                        }
-                    }
-
                     // Add/remove res:// prefix if required.
-                    if engine_build.has_prefixless_pck_paths {
-                        if path.starts_with("res://") {
-                            path = path
-                                .strip_prefix("res://")
-                                .map(|p| p.to_string())
-                                .unwrap_or(path);
-                        }
-                    } else {
-                        if !path.starts_with("res://") {
-                            path = format!("res://{}", path);
-                        }
-                    }
+                    path = ensure_path_prefix(&path);
+                    let normalized_path = strip_path_prefix(&path);
 
                     let exists_in_old = old_pack.files.contains_key(&path);
                     let is_script = path.ends_with(".gd") || path.ends_with(".gdc");
@@ -575,12 +564,19 @@ impl GDPatch {
                         continue;
                     }
 
-                    trace!("adding modded file");
-                    if path == "project.binary" || path == "res://project.binary" {
-                        warn!("mod PCK contains project settings file, skipping");
+                    if normalized_path == UIDCache::UID_CACHE_PATH {
+                        let mut buffer = ReadableMarshalBuffer::new(contents.as_slice(), true);
+                        if let Err(err) = uid_cache.merge_decode(&mut buffer) {
+                            error!(?err, "failed to decode UID cache");
+                        }
+                    }
+
+                    if normalized_path == ProjectSettings::PROJECT_SETTINGS_FILENAME {
+                        warn!("skipping project settings file in mod pack");
                         continue;
                     }
 
+                    trace!("adding modded file");
                     builder.add_file(
                         path.clone(),
                         contents.len(),
@@ -592,14 +588,16 @@ impl GDPatch {
         }
 
         // Save UID cache.
-        let mut buffer = WritableMarshalBuffer::new(false);
-        uid_cache.encode(&mut buffer);
-        builder.add_file(
-            UIDCache::UID_CACHE_PATH.to_owned(),
-            buffer.len() as u64,
-            [0u8; 16],
-            FileContents::Memory(buffer.into_inner()),
-        );
+        {
+            let mut buffer = WritableMarshalBuffer::new(false);
+            uid_cache.encode(&mut buffer);
+            builder.add_file(
+                ensure_path_prefix(UIDCache::UID_CACHE_PATH),
+                buffer.len() as u64,
+                [0u8; 16], // TODO
+                FileContents::Memory(buffer.into_inner()),
+            );
+        }
 
         let virtual_pack = Arc::new(builder.build(header_pos_within_file));
         self.virtual_packs
