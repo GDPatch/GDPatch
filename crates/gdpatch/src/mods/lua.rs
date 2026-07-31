@@ -39,6 +39,16 @@ impl ModLua {
             .expect("failed to set global on runtime");
         crate::bindings::register_module(&lua)?;
 
+        {
+            let utils = include_str!("utils.lua");
+            let utils = lua
+                .load(utils)
+                .eval::<mlua::Table>()
+                .expect("utils should never fail to load");
+
+            lua.register_module("gdpatch.utils", utils)?;
+        }
+
         // TODO(jules): make this an actual logger perhaps
         lua.globals().set(
             "print",

@@ -213,7 +213,7 @@ One of the following tables:
 
 Lua primitives are automatically encoded as their Godot counterparts (`nil`, `boolean`, `number`, `string`). Other variants can be created with the `gdpatch.variant` module:
 
-```lua
+```lua title="Example"
 local variant = require("gdpatch.variant")
 local vec = variant.Vector3(0, 0, 0)
 ```
@@ -423,3 +423,28 @@ local vec = variant.Vector3(0, 0, 0)
 
 - Constructor: `PackedVector4Array(value?: Vector4[])`
 - `value`: `Vector4[]`
+
+## Utils
+
+Some helpful functions provided by GDPatch are contained in the `gdpatch.utils` module:
+
+```lua title="Example"
+local utils = require("gdpatch.utils")
+print(utils.escape("..."))
+```
+
+### `utils.escape()`
+
+- Arguments:
+  - `str`: `string`
+
+Escapes special characters in a string that could be interpreted as a Lua pattern. This is helpful if you're replacing GDScript in [`GDPatch.patch_script_as_text()`](#gdpatchpatch_script_as_text), as some GDScript characters are also [used for Lua patterns](https://www.lua.org/manual/5.5/manual.html#6.5.1).
+
+```lua title="Example"
+-- if you're new to Lua, that [[ is an alternate way to represent a string
+-- https://www.lua.org/pil/2.4.html
+src = src:gsub(
+  utils.escape([[get_tree().root.title = "Game Name"]]),
+  [[get_tree().root.title = "meow :3"]]
+)
+```
