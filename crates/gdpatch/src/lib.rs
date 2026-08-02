@@ -219,7 +219,6 @@ impl GDPatch {
     /// Sets up the logging configuration.
     fn setup_logger(&self) -> color_eyre::Result<()> {
         let level_layer: LevelFilter = self.config.log.level.into();
-        let stdout_layer = tracing_subscriber::fmt::layer().with_ansi(self.config.log.console_ansi);
 
         let log_directory = self.root_directory.clone();
         let log_file: PathBuf = "output.log".into();
@@ -234,11 +233,13 @@ impl GDPatch {
             .with_writer(tracing_appender::rolling::never(log_directory, log_file))
             .with_ansi(false);
 
+        let stdout_layer = tracing_subscriber::fmt::layer().with_ansi(self.config.log.console_ansi);
+
         tracing_subscriber::registry()
-            .with(level_layer)
-            .with(stdout_layer)
-            .with(file_layer)
             .with(ErrorLayer::default())
+            .with(level_layer)
+            .with(file_layer)
+            .with(stdout_layer)
             .try_init()
             .context("failed to setup tracing")?;
 
