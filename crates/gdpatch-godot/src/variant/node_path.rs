@@ -76,7 +76,7 @@ impl FromStr for NodePath {
             let start = from;
             for i in start..=path_chars.len() {
                 if matches!(path_chars.get(i), Some(':') | None) {
-                    let str = &path[from..i - from];
+                    let str = &path[from..i];
 
                     if str.is_empty() {
                         if path_chars.get(i).is_none() {
@@ -127,7 +127,9 @@ impl FromStr for NodePath {
         for i in (absolute as _)..=path_chars.len() {
             if matches!(path_chars.get(i), Some('/') | None) {
                 if !last_is_slash {
-                    let name = &path[from..i - from];
+                    // XXX: Godot's `substr` implementation implicitly caps the character length if it's too large. Sigh...
+                    let idx = i.min(path.len());
+                    let name = &path[from..idx];
                     assert!(slice <= slices);
                     out_path.push(name.to_string());
                 }
