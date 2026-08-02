@@ -2777,10 +2777,9 @@ impl Parser<'_> {
             let previous_type = self.previous().0.typ();
             let infix = get_rule(previous_type).infix.expect("no infix for rule");
 
-            if let Some(result) = (infix.parser)(self, previous_operand, can_assign) {
+            {
+                let result = (infix.parser)(self, previous_operand, can_assign)?;
                 previous_operand = result;
-            } else {
-                return None;
             }
         }
 
@@ -3877,6 +3876,6 @@ pub fn parse_to_tokens(tokenizer: &mut dyn Tokenizer) -> color_eyre::Result<Vec<
         bail!(
             "failed to parse script due to {} errors",
             parser.errors.len()
-        )
+        );
     }
 }

@@ -42,7 +42,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
         with:
-          toolchain: nightly-2026-02-26
+          toolchain: nightly-2026-08-01
           targets: ${{ matrix.target }}
       - name: Setup cache
         uses: Swatinem/rust-cache@v2

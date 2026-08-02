@@ -465,7 +465,9 @@ impl SerializedGDScriptBuild {
     fn resolve(self, parent: Option<&GDScriptBuild>) -> crate::Result<GDScriptBuild, Report> {
         Ok(match (self.version, parent) {
             // version + no parent, parse from scratch
-            (Some(1), None) => bail!("GDScript V1 isn't implemented yet"),
+            (Some(1), None) => {
+                bail!("GDScript V1 isn't implemented yet");
+            }
 
             (Some(2), None) => GDScriptBuild::V2(expand_resolve!(#error self GDScriptV2Build {
                 tokenizer_version,
@@ -500,7 +502,9 @@ impl SerializedGDScriptBuild {
             })),
 
             // inherit from parent
-            (None, Some(GDScriptBuild::V1(_parent))) => bail!("GDScript V1 isn't implemented yet"),
+            (None, Some(GDScriptBuild::V1(_parent))) => {
+                bail!("GDScript V1 isn't implemented yet");
+            }
 
             (None, Some(GDScriptBuild::V2(parent))) => {
                 GDScriptBuild::V2(expand_resolve!(parent self GDScriptV2Build {
@@ -538,17 +542,21 @@ impl SerializedGDScriptBuild {
 
             // specified a version and a parent
             (Some(_), Some(_)) => {
-                bail!("specified a version and a parent at the same time in a GDScript build")
+                bail!("specified a version and a parent at the same time in a GDScript build");
             }
 
             // no parent or version specified
-            (None, None) => bail!("GDScript builds require either a parent or a version number"),
+            (None, None) => {
+                bail!("GDScript builds require either a parent or a version number");
+            }
 
             // invalid version specified
-            (Some(n), _) => bail!(
-                "invalid GDScript version number {}, only 1 and 2 are valid",
-                n
-            ),
+            (Some(n), _) => {
+                bail!(
+                    "invalid GDScript version number {}, only 1 and 2 are valid",
+                    n
+                );
+            }
         })
     }
 }

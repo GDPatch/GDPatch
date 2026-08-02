@@ -22,10 +22,9 @@ where
     /// Peeks a character at the given offset (`0` is the next character).
     pub fn peek(&mut self, offset: usize) -> Option<T> {
         while self.buffer.len() <= offset {
-            if let Some(t) = self.iter.next() {
+            {
+                let t = self.iter.next()?;
                 self.buffer.push_back(t);
-            } else {
-                return None;
             }
         }
 
