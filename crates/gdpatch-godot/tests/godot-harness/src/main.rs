@@ -63,6 +63,7 @@ fn determine_godot_build(godot_binary: &Path) -> color_eyre::Result<EngineBuild>
 
     let builds = resolve_bundled_builds(None).unwrap();
     let build = builds
+        .engine
         .find_approximate_build(&version)
         .ok_or_else(|| eyre!("failed to find build for {version}"))?;
 

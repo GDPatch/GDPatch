@@ -1,5 +1,8 @@
 use crate::virtual_pack::{FileContents, VirtualPack, VirtualPackEntry};
-use gdpatch_godot::pack::{Pack, PackBuilder, PackedFile};
+use gdpatch_godot::{
+    build::EngineFlavor,
+    pack::{Pack, PackBuilder, PackedFile},
+};
 use indexmap::IndexMap;
 
 /// Arbitrary alignment for files in packs. At least on Windows the userspace API tends to fetch
@@ -45,8 +48,8 @@ impl VirtualPackBuilder {
     }
 
     /// Consume this instance and return the built [`VirtualPack`].
-    pub fn build(self, header_pos_within_file: u64) -> VirtualPack {
-        let header = self.builder.encode(header_pos_within_file);
+    pub fn build(self, flavor: &EngineFlavor, header_pos_within_file: u64) -> VirtualPack {
+        let header = self.builder.encode(flavor, header_pos_within_file);
 
         let entries = self
             .entries

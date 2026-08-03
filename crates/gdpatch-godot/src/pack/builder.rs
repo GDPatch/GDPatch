@@ -1,5 +1,6 @@
 use crate::WritableMarshalBuffer;
-use crate::pack::{PACK_HEADER_MAGIC, PackFormat, PackedFile};
+use crate::build::EngineFlavor;
+use crate::pack::{PackFormat, PackedFile};
 use indexmap::IndexMap;
 
 #[derive(Debug)]
@@ -43,11 +44,11 @@ impl PackBuilder {
     /// The `header_pos_within_file` parameter is only used for encoding V2 format pack files,
     /// where the encoded header file base is absolute instead of relative. This method assumes
     /// all files will be written directly after the end of the directory.
-    pub fn encode(&self, header_pos_within_file: u64) -> Vec<u8> {
+    pub fn encode(&self, flavor: &EngineFlavor, header_pos_within_file: u64) -> Vec<u8> {
         let directory = self.encode_directory();
 
         let mut header = WritableMarshalBuffer::new(false);
-        header.encode_uint32(PACK_HEADER_MAGIC);
+        header.encode_uint32(flavor.pck_header_magic);
 
         header.encode_uint32(self.format as u32);
         header.encode_uint32(self.engine_version.0);

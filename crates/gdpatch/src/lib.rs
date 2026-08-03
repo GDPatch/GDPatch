@@ -33,7 +33,7 @@ use crate::virtual_pack::builder::VirtualPackBuilder;
 use crate::virtual_pack::{FileContents, VirtualPack};
 pub use config::Config;
 use gdpatch_godot::build::{
-    EngineBuilds, GDScriptBuild, SerializedBuildsFile, VersionSpecifier, resolve_bundled_builds,
+    BuildsFile, GDScriptBuild, SerializedBuildsFile, VersionSpecifier, resolve_bundled_builds,
 };
 use gdpatch_godot::pack::Pack;
 use gdpatch_godot::{ReadableMarshalBuffer, UIDCache, WritableMarshalBuffer};
@@ -45,7 +45,7 @@ pub struct GDPatch {
     pub config: Config,
     root_directory: PathBuf,
     virtual_packs: RwLock<HashMap<PathBuf, Arc<VirtualPack>>>,
-    engine_builds: OnceLock<EngineBuilds>,
+    engine_info: OnceLock<BuildsFile>,
     mods: RwLock<Option<Mods>>,
 }
 
@@ -55,7 +55,7 @@ impl GDPatch {
             config,
             root_directory,
             virtual_packs: Default::default(),
-            engine_builds: Default::default(),
+            engine_info: Default::default(),
             mods: RwLock::new(None),
         }
     }
@@ -94,15 +94,42 @@ impl GDPatch {
     pub fn finish_setup(&self) -> color_eyre::Result<()> {
         info!("This is GDPatch {}, heya!", env!("CARGO_PKG_VERSION"));
 
-        // Setup file hooks.
-        filesilly::init()?;
-        filesilly::set(Box::new(GDPatchStreamFactory));
-
         // Search for mods.
         let mods_directory = self.root_directory.join("mods");
         let configs_directory = self.root_directory.join("configs");
 
-        let mods = match Mods::search_and_load(&mods_directory, &configs_directory) {
+        // Load custom engine builds if present.
+        let custom_builds_path = self.root_directory.join("builds.toml");
+        let custom_builds = if custom_builds_path.exists() {
+            let result = try {
+                let str = std::fs::read_to_string(custom_builds_path)
+                    .context("failed to read custom builds.toml")?;
+
+                toml::from_str::<SerializedBuildsFile>(&str)
+                    .context("failed to parse custom builds.toml")?
+            };
+
+            if let Err(err) = &result {
+                error!(err = %err, "failed to read custom build metadata");
+            }
+
+            result.ok()
+        } else {
+            None
+        };
+
+        let engine_info = resolve_bundled_builds(custom_builds)?;
+        let flavor = engine_info
+            .flavor
+            .0
+            .get(&self.config.engine.flavor)
+            .expect("failed to resolve engine flavor")
+            .clone();
+        self.engine_info
+            .set(engine_info)
+            .expect("loaded engine info twice!");
+
+        let mods = match Mods::search_and_load(&mods_directory, &configs_directory, &flavor) {
             Ok(mods) => mods,
             Err(errs) => {
                 let pretty_errs = errs
@@ -133,30 +160,9 @@ impl GDPatch {
         let existing = self.mods.write().replace(mods);
         assert!(existing.is_none(), "ran mod initialization twice!");
 
-        // Load custom engine builds if present.
-        let custom_builds_path = self.root_directory.join("builds.toml");
-        let custom_builds = if custom_builds_path.exists() {
-            let result = try {
-                let str = std::fs::read_to_string(custom_builds_path)
-                    .context("failed to read custom builds.toml")?;
-
-                toml::from_str::<SerializedBuildsFile>(&str)
-                    .context("failed to parse custom builds.toml")?
-            };
-
-            if let Err(err) = &result {
-                error!(err = %err, "failed to read custom build metadata");
-            }
-
-            result.ok()
-        } else {
-            None
-        };
-
-        let engine_builds = resolve_bundled_builds(custom_builds)?;
-        self.engine_builds
-            .set(engine_builds)
-            .expect("loaded engine builds twice!");
+        // Setup file hooks.
+        filesilly::init()?;
+        filesilly::set(Box::new(GDPatchStreamFactory::new(flavor)));
 
         Ok(())
     }
@@ -301,7 +307,7 @@ impl GDPatch {
             }
         }
 
-        let engine_build = {
+        let (engine_build, flavor) = {
             let version = match &self.config.engine.version {
                 // Overwrite the flavor, which is specified separately
                 Some(version) => VersionSpecifier::new(
@@ -321,13 +327,19 @@ impl GDPatch {
                 ),
             };
 
-            let engine_builds = self
-                .engine_builds
+            let engine_info = self
+                .engine_info
                 .get()
-                .expect("engine builds should have been initialized");
-            let engine_build = engine_builds
+                .expect("engine info should have been initialized");
+            let engine_build = engine_info
+                .engine
                 .find_approximate_build(&version)
                 .expect("failed to resolve engine build");
+            let flavor = engine_info
+                .flavor
+                .0
+                .get(&version.flavor)
+                .expect("failed to resolve engine flavor");
 
             info!(version = %engine_build.version, "using engine build");
 
@@ -341,7 +353,7 @@ impl GDPatch {
                 warn!(pack = pack_version, resolved = %engine_build.version, "unsupported engine minor/patch version - you may encounter issues");
             }
 
-            engine_build.clone()
+            (engine_build.clone(), flavor.clone())
         };
         let strip_path_prefix = |path: &str| {
             if engine_build.has_prefixless_pck_paths {
@@ -605,7 +617,7 @@ impl GDPatch {
             );
         }
 
-        let virtual_pack = Arc::new(builder.build(header_pos_within_file));
+        let virtual_pack = Arc::new(builder.build(&flavor, header_pos_within_file));
         self.virtual_packs
             .write()
             .insert(path, virtual_pack.clone());

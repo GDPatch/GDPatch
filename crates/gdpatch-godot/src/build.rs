@@ -559,7 +559,7 @@ impl SerializedGDScriptBuild {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct SerializedGDScriptBuilds(pub HashMap<String, SerializedGDScriptBuild>);
 
 impl SerializedGDScriptBuilds {
@@ -856,6 +856,7 @@ pub struct SerializedEngineBuild {
     /// [`2ac562cdf8366876381902a0667fec704e357495`] (4.4).
     ///
     /// [`2ac562cdf8366876381902a0667fec704e357495`]: https://github.com/godotengine/godot/commit/2ac562cdf8366876381902a0667fec704e357495
+    #[serde(default)]
     pub has_prefixless_pck_paths: Option<bool>,
 }
 
@@ -883,6 +884,7 @@ impl SerializedEngineBuild {
             commit: self.commit,
             gdscript,
 
+            // TODO: macro this
             has_prefixless_pck_paths: self
                 .has_prefixless_pck_paths
                 .or(parent.map(|p| p.has_prefixless_pck_paths))
@@ -893,7 +895,7 @@ impl SerializedEngineBuild {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct SerializedEngineBuilds(pub HashMap<VersionSpecifier, SerializedEngineBuild>);
 
 impl SerializedEngineBuilds {
@@ -970,30 +972,156 @@ impl SerializedEngineBuilds {
     }
 }
 
+/// Metadata about the engine flavor to parse for.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct EngineFlavor {
+    // Flavor ID.
+    pub flavor: String,
+
+    /// Header magic to use for pack files.
+    pub pck_header_magic: u32,
+}
+
+/// List of known engine flavors.
+#[derive(Debug, Clone)]
+pub struct EngineFlavors(pub BTreeMap<String, EngineFlavor>);
+
+#[derive(Debug, Clone, Deserialize)]
+#[non_exhaustive]
+#[serde(deny_unknown_fields)]
+pub struct SerializedEngineFlavor {
+    /// Parent flavor to inherit from.
+    #[serde(default)]
+    pub parent: Option<String>,
+
+    /// Header magic to use for pack files.
+    #[serde(default)]
+    pub pck_header_magic: Option<u32>,
+}
+
+impl SerializedEngineFlavor {
+    pub fn resolve(
+        self,
+        flavor: String,
+        parent: Option<&EngineFlavor>,
+    ) -> crate::Result<EngineFlavor, Report> {
+        Ok(EngineFlavor {
+            flavor,
+
+            // TODO: macro this
+            pck_header_magic: self
+                .pck_header_magic
+                .or(parent.map(|p| p.pck_header_magic))
+                .ok_or_eyre(
+                    "missing `pck_header_magic` in engine flavor and no parent specified",
+                )?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct SerializedEngineFlavors(pub HashMap<String, SerializedEngineFlavor>);
+
+impl SerializedEngineFlavors {
+    pub fn merge(&mut self, other: Self) {
+        self.0.extend(other.0);
+    }
+
+    /// Resolves parent flavors into flat builds.
+    pub fn resolve(mut self) -> crate::Result<EngineFlavors, Report> {
+        // already resolved entries
+        let mut resolved = BTreeMap::new();
+
+        // stack of entries that are waiting to resolve due to their parents not being resolved yet
+        let mut current_stack = Vec::new();
+
+        fn resolve<'a>(
+            serialized_flavors: &mut HashMap<String, SerializedEngineFlavor>,
+            resolved_flavors: &'a mut BTreeMap<String, EngineFlavor>,
+            current_stack: &mut Vec<String>,
+            id: String,
+        ) -> crate::Result<&'a EngineFlavor, Report> {
+            current_stack.push(id.clone());
+
+            // check if already resolved
+            if resolved_flavors.contains_key(&id) {
+                return Ok(&resolved_flavors[&id]);
+            }
+
+            // remove flavor from flavors list
+            let serialized_flavor = serialized_flavors
+                .remove(&id)
+                .ok_or_else(|| eyre!("unknown flavor {} in parent dependencies", &id))?;
+
+            // resolve parent first
+            let parent = match &serialized_flavor.parent {
+                None => None,
+                Some(parent_flavor) => Some(resolve(
+                    serialized_flavors,
+                    resolved_flavors,
+                    current_stack,
+                    parent_flavor.clone(),
+                )?),
+            };
+
+            let flavor = serialized_flavor.resolve(id.clone(), parent)?;
+
+            let btree_map::Entry::Vacant(entry) = resolved_flavors.entry(id.clone()) else {
+                unreachable!()
+            };
+
+            let flavor_ref = entry.insert(flavor);
+            current_stack.pop();
+
+            Ok(&*flavor_ref)
+        }
+
+        // remove random entry from builds and resolve it
+        while let Some(flavor) = self.0.keys().next().cloned() {
+            resolve(&mut self.0, &mut resolved, &mut current_stack, flavor)?;
+        }
+
+        Ok(EngineFlavors(resolved))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct BuildsFile {
+    pub engine: EngineBuilds,
+    pub flavor: EngineFlavors,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SerializedBuildsFile {
+    #[serde(default)]
     pub gdscript: SerializedGDScriptBuilds,
+    #[serde(default)]
     pub engine: SerializedEngineBuilds,
+    #[serde(default)]
+    pub flavor: SerializedEngineFlavors,
 }
 
 impl SerializedBuildsFile {
     pub fn merge(&mut self, other: Self) {
         self.gdscript.merge(other.gdscript);
         self.engine.merge(other.engine);
+        self.flavor.merge(other.flavor);
     }
 
-    pub fn resolve(self) -> crate::Result<EngineBuilds, Report> {
+    pub fn resolve(self) -> crate::Result<BuildsFile, Report> {
         let gdscript = self.gdscript.resolve()?;
+        let flavor = self.flavor.resolve()?;
         let engine = self.engine.resolve(&gdscript)?;
 
-        Ok(engine)
+        Ok(BuildsFile { engine, flavor })
     }
 }
 
 pub fn resolve_bundled_builds(
     custom_builds: Option<SerializedBuildsFile>,
-) -> color_eyre::Result<EngineBuilds> {
+) -> color_eyre::Result<BuildsFile> {
     static BUNDLED_BUILDS_TEXT: &str = include_str!("../builds.toml");
     let mut builds = toml::from_str::<SerializedBuildsFile>(BUNDLED_BUILDS_TEXT)
         .expect("bundled builds.toml is invalid");

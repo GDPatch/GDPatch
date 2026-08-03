@@ -1509,6 +1509,7 @@ mod tests {
     fn test_newline_jank() {
         let builds = resolve_bundled_builds(None).unwrap();
         let build = builds
+            .engine
             .find_exact_build(&VersionSpecifier::from_str("4.5-stable").unwrap())
             .unwrap();
 

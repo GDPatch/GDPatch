@@ -2,7 +2,7 @@
 
 mod builder;
 
-use crate::Error;
+use crate::{Error, build::EngineFlavor};
 use byteorder::{LittleEndian, ReadBytesExt};
 use core::str;
 use indexmap::IndexMap;
@@ -10,9 +10,6 @@ use std::io::{Read, Seek, SeekFrom};
 use tracing::error;
 
 pub use self::builder::PackBuilder;
-
-/// Godot's packed file magic header ("GDPC" in ASCII).
-pub const PACK_HEADER_MAGIC: u32 = 0x43504447;
 
 const PACK_DIR_ENCRYPTED: u32 = 1 << 0;
 const PACK_REL_FILEBASE: u32 = 1 << 1;
@@ -70,7 +67,7 @@ pub struct Pack {
 
 impl Pack {
     // TODO: rewrite this to use marshalling
-    pub fn parse<R>(mut f: R) -> crate::Result<Self>
+    pub fn parse<R>(mut f: R, flavor: &EngineFlavor) -> crate::Result<Self>
     where
         R: Read + Seek,
     {
@@ -78,7 +75,7 @@ impl Pack {
 
         let magic = f.read_u32::<LittleEndian>()?;
 
-        if magic != PACK_HEADER_MAGIC {
+        if magic != flavor.pck_header_magic {
             return Err(Error::BadData);
         }
 
