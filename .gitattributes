@@ -1,2 +1,7 @@
 * text=auto
 *.keepcrlf.gd -text
+
+# Linguist stuff
+*.gd linguist-language=GDScript
+*.h linguist-language=C++
+crates/gdpatch-godot/tests/godot-harness/gdpatch_test/thirdparty/** linguist-vendored
