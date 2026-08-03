@@ -1502,12 +1502,13 @@ impl Tokenizer for TokenizerText<'_, '_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::build::{GDScriptBuild, VersionSpecifier, bundled_builds};
+    use crate::build::{GDScriptBuild, VersionSpecifier, resolve_bundled_builds};
     use crate::gdscript::tokenizer::{CompressMode, TokenizerBytecode, reconstruct_script_binary};
 
     #[test]
     fn test_newline_jank() {
-        let build = bundled_builds()
+        let builds = resolve_bundled_builds(None).unwrap();
+        let build = builds
             .find_exact_build(&VersionSpecifier::from_str("4.5-stable").unwrap())
             .unwrap();
 

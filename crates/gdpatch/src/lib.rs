@@ -33,7 +33,7 @@ use crate::virtual_pack::builder::VirtualPackBuilder;
 use crate::virtual_pack::{FileContents, VirtualPack};
 pub use config::Config;
 use gdpatch_godot::build::{
-    EngineBuilds, GDScriptBuild, SerializedBuildsFile, VersionSpecifier, bundled_builds,
+    EngineBuilds, GDScriptBuild, SerializedBuildsFile, VersionSpecifier, resolve_bundled_builds,
 };
 use gdpatch_godot::pack::Pack;
 use gdpatch_godot::{ReadableMarshalBuffer, UIDCache, WritableMarshalBuffer};
@@ -45,7 +45,7 @@ pub struct GDPatch {
     pub config: Config,
     root_directory: PathBuf,
     virtual_packs: RwLock<HashMap<PathBuf, Arc<VirtualPack>>>,
-    custom_engine_builds: RwLock<Option<EngineBuilds>>,
+    engine_builds: OnceLock<EngineBuilds>,
     mods: RwLock<Option<Mods>>,
 }
 
@@ -55,52 +55,10 @@ impl GDPatch {
             config,
             root_directory,
             virtual_packs: Default::default(),
-            custom_engine_builds: RwLock::new(None),
+            engine_builds: Default::default(),
             mods: RwLock::new(None),
         }
     }
-
-    pub fn get_config_option(
-        &self,
-        mod_id: &str,
-        section: &str,
-        option: &str,
-    ) -> Option<toml::Value> {
-        if mod_id == BUILTIN_MOD_ID {
-            // jank hack to read our config like this
-            let str = toml::to_string(&self.config).ok()?;
-            let data: HashMap<String, HashMap<String, toml::Value>> = toml::from_str(&str).ok()?;
-            data.get(section).and_then(|s| s.get(option)).cloned()
-        } else {
-            let mods = self.mods.read();
-            let mods = mods.as_ref()?;
-            let r#mod = mods.0.get(mod_id)?;
-            r#mod.config.get_option(section, option).cloned()
-        }
-    }
-
-    pub fn set_config_option(
-        &self,
-        mod_id: &str,
-        section: &str,
-        option: &str,
-        value: Option<toml::Value>,
-    ) -> color_eyre::Result<()> {
-        if mod_id == BUILTIN_MOD_ID {
-            // No.
-            Ok(())
-        } else {
-            let mut mods = self.mods.write();
-            let mods = mods
-                .as_mut()
-                .ok_or_eyre("mods should have been initialized")?;
-            let r#mod = mods.0.get_mut(mod_id).wrap_err("mod ID does not exist")?;
-
-            r#mod.config.set_option(section, option, value)?;
-            Ok(())
-        }
-    }
-
     /// Configures the global instance.
     pub fn setup_instance_logging_etc() -> color_eyre::Result<()> {
         let game_directory = std::env::current_exe()
@@ -177,31 +135,28 @@ impl GDPatch {
 
         // Load custom engine builds if present.
         let custom_builds_path = self.root_directory.join("builds.toml");
-        if custom_builds_path.exists() {
+        let custom_builds = if custom_builds_path.exists() {
             let result = try {
                 let str = std::fs::read_to_string(custom_builds_path)
                     .context("failed to read custom builds.toml")?;
 
-                let builds = toml::from_str::<SerializedBuildsFile>(&str)
-                    .context("failed to parse custom builds.toml")?;
-
-                builds
-                    .resolve()
-                    .context("failed to resolve custom engine builds")?
+                toml::from_str::<SerializedBuildsFile>(&str)
+                    .context("failed to parse custom builds.toml")?
             };
-            match result {
-                Ok(custom_engine_builds) => {
-                    let existing = self
-                        .custom_engine_builds
-                        .write()
-                        .replace(custom_engine_builds);
-                    assert!(existing.is_none(), "loaded custom engine builds twice!");
-                }
-                Err(err) => {
-                    error!(err = %err, "failed to read custom build metadata");
-                }
+
+            if let Err(err) = &result {
+                error!(err = %err, "failed to read custom build metadata");
             }
+
+            result.ok()
+        } else {
+            None
         };
+
+        let engine_builds = resolve_bundled_builds(custom_builds)?;
+        self.engine_builds
+            .set(engine_builds)
+            .expect("loaded engine builds twice!");
 
         Ok(())
     }
@@ -244,6 +199,47 @@ impl GDPatch {
             .context("failed to setup tracing")?;
 
         Ok(())
+    }
+
+    pub fn get_config_option(
+        &self,
+        mod_id: &str,
+        section: &str,
+        option: &str,
+    ) -> Option<toml::Value> {
+        if mod_id == BUILTIN_MOD_ID {
+            // jank hack to read our config like this
+            let str = toml::to_string(&self.config).ok()?;
+            let data: HashMap<String, HashMap<String, toml::Value>> = toml::from_str(&str).ok()?;
+            data.get(section).and_then(|s| s.get(option)).cloned()
+        } else {
+            let mods = self.mods.read();
+            let mods = mods.as_ref()?;
+            let r#mod = mods.0.get(mod_id)?;
+            r#mod.config.get_option(section, option).cloned()
+        }
+    }
+
+    pub fn set_config_option(
+        &self,
+        mod_id: &str,
+        section: &str,
+        option: &str,
+        value: Option<toml::Value>,
+    ) -> color_eyre::Result<()> {
+        if mod_id == BUILTIN_MOD_ID {
+            // No.
+            Ok(())
+        } else {
+            let mut mods = self.mods.write();
+            let mods = mods
+                .as_mut()
+                .ok_or_eyre("mods should have been initialized")?;
+            let r#mod = mods.0.get_mut(mod_id).wrap_err("mod ID does not exist")?;
+
+            r#mod.config.set_option(section, option, value)?;
+            Ok(())
+        }
     }
 
     /// Gets a pre-existing virtual pack by path.
@@ -305,31 +301,35 @@ impl GDPatch {
             }
         }
 
-        // resolve engine build
         let engine_build = {
-            let custom_engine_builds = self.custom_engine_builds.read();
-            let (engine_builds, is_custom) =
-                if let Some(custom_builds) = &custom_engine_builds.as_ref() {
-                    (*custom_builds, true)
-                } else {
-                    (bundled_builds(), false)
-                };
+            let version = match &self.config.engine.version {
+                // Overwrite the flavor, which is specified separately
+                Some(version) => VersionSpecifier::new(
+                    version.major,
+                    version.minor,
+                    version.patch,
+                    version.sub_patch,
+                    &self.config.engine.flavor,
+                ),
 
-            let version = self.config.engine.version.clone().unwrap_or_else(|| {
-                VersionSpecifier::new(
+                None => VersionSpecifier::new(
                     old_pack.engine_version.0,
                     old_pack.engine_version.1,
                     old_pack.engine_version.2,
                     0,
                     &self.config.engine.flavor,
-                )
-            });
+                ),
+            };
 
+            let engine_builds = self
+                .engine_builds
+                .get()
+                .expect("engine builds should have been initialized");
             let engine_build = engine_builds
                 .find_approximate_build(&version)
                 .expect("failed to resolve engine build");
 
-            info!(version = %engine_build.version, "using {}engine build", if is_custom { "custom " } else { "" });
+            info!(version = %engine_build.version, "using engine build");
 
             if engine_build.version.minor != old_pack.engine_version.1
                 || engine_build.version.patch != old_pack.engine_version.2

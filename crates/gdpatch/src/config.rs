@@ -72,7 +72,7 @@ pub struct ConfigEngine {
     /// You should leave this as the default unless this game requires a special value.
     pub flavor: String,
 
-    /// The engine version to use for this game, as a version string (e.g. "4.6.0").
+    /// The engine version to use for this game, as a version string (e.g. "4.6.0-stable").
     /// You should leave this unset unless this game requires a special value.
     pub version: Option<VersionSpecifier>,
 }

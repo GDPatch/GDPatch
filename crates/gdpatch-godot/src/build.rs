@@ -1,6 +1,5 @@
 use crate::gdscript::TokenType;
-use color_eyre::Report;
-use color_eyre::eyre::{OptionExt, bail, eyre};
+use color_eyre::eyre::{Context, OptionExt, Report, bail, eyre};
 use serde::de::{Error, Unexpected};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
@@ -8,7 +7,6 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, btree_map};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
-use std::sync::LazyLock;
 use thiserror::Error;
 
 /// Tokenizer information specific to the GDScript V1 tokenizer.
@@ -565,6 +563,10 @@ impl SerializedGDScriptBuild {
 pub struct SerializedGDScriptBuilds(pub HashMap<String, SerializedGDScriptBuild>);
 
 impl SerializedGDScriptBuilds {
+    pub fn merge(&mut self, other: Self) {
+        self.0.extend(other.0);
+    }
+
     pub fn resolve(mut self) -> crate::Result<GDScriptBuilds, Report> {
         // already resolved entries
         let mut resolved = HashMap::new();
@@ -895,6 +897,10 @@ impl SerializedEngineBuild {
 pub struct SerializedEngineBuilds(pub HashMap<VersionSpecifier, SerializedEngineBuild>);
 
 impl SerializedEngineBuilds {
+    pub fn merge(&mut self, other: Self) {
+        self.0.extend(other.0);
+    }
+
     /// Resolves parent versions into flat builds.
     pub fn resolve(
         mut self,
@@ -972,6 +978,11 @@ pub struct SerializedBuildsFile {
 }
 
 impl SerializedBuildsFile {
+    pub fn merge(&mut self, other: Self) {
+        self.gdscript.merge(other.gdscript);
+        self.engine.merge(other.engine);
+    }
+
     pub fn resolve(self) -> crate::Result<EngineBuilds, Report> {
         let gdscript = self.gdscript.resolve()?;
         let engine = self.engine.resolve(&gdscript)?;
@@ -980,17 +991,16 @@ impl SerializedBuildsFile {
     }
 }
 
-static BUNDLED_BUILDS: LazyLock<EngineBuilds> = LazyLock::new(|| {
-    static BUILDS_TEXT: &str = include_str!("../builds.toml");
-
-    let unresolved = toml::from_str::<SerializedBuildsFile>(BUILDS_TEXT)
+pub fn resolve_bundled_builds(
+    custom_builds: Option<SerializedBuildsFile>,
+) -> color_eyre::Result<EngineBuilds> {
+    static BUNDLED_BUILDS_TEXT: &str = include_str!("../builds.toml");
+    let mut builds = toml::from_str::<SerializedBuildsFile>(BUNDLED_BUILDS_TEXT)
         .expect("bundled builds.toml is invalid");
 
-    unresolved
-        .resolve()
-        .expect("bundled builds.toml is invalid")
-});
+    if let Some(custom_builds) = custom_builds {
+        builds.merge(custom_builds);
+    }
 
-pub fn bundled_builds() -> &'static EngineBuilds {
-    &BUNDLED_BUILDS
+    builds.resolve().context("failed to resolve engine builds")
 }

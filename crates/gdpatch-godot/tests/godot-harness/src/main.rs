@@ -5,7 +5,7 @@ mod tokenizer;
 
 use crate::tokenizer::buffer::convert_and_run_buffer_tokenizer_test;
 use color_eyre::eyre::{OptionExt, WrapErr, bail, eyre};
-use gdpatch_godot::build::{EngineBuild, VersionSpecifier, bundled_builds};
+use gdpatch_godot::build::{EngineBuild, VersionSpecifier, resolve_bundled_builds};
 use libtest_mimic::{Arguments, Trial};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -61,7 +61,8 @@ fn determine_godot_build(godot_binary: &Path) -> color_eyre::Result<EngineBuild>
     let version = try_parse_version_string(&version_string)
         .ok_or_else(|| eyre!("failed to parse version string {version_string}"))?;
 
-    let build = bundled_builds()
+    let builds = resolve_bundled_builds(None).unwrap();
+    let build = builds
         .find_approximate_build(&version)
         .ok_or_else(|| eyre!("failed to find build for {version}"))?;
 
