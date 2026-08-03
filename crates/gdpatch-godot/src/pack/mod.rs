@@ -2,7 +2,10 @@
 
 mod builder;
 
-use crate::Error;
+use crate::{
+    Error,
+    build::{EngineBuild, SerializedEngineBuild},
+};
 use byteorder::{LittleEndian, ReadBytesExt};
 use core::str;
 use indexmap::IndexMap;
@@ -11,9 +14,6 @@ use tracing::error;
 
 pub use self::builder::PackBuilder;
 
-/// Godot's packed file magic header ("GDPC" in ASCII).
-pub const PACK_HEADER_MAGIC: u32 = 0x43504447;
-
 const PACK_DIR_ENCRYPTED: u32 = 1 << 0;
 const PACK_REL_FILEBASE: u32 = 1 << 1;
 const PACK_SPARSE_BUNDLE: u32 = 1 << 2;
@@ -21,6 +21,42 @@ const PACK_SPARSE_BUNDLE: u32 = 1 << 2;
 const PACK_FILE_ENCRYPTED: u32 = 1 << 0;
 const PACK_FILE_REMOVAL: u32 = 1 << 1;
 const PACK_FILE_DELTA: u32 = 1 << 2;
+
+/// Extra unconventional settings for parsing a pack file.
+///
+/// Some engine builds modify the pack format in a way that requires special workarounds. This is a problem for our
+/// build catalog system, as it uses the pack header to determine the engine version automatically. To avoid requiring
+/// the user to specify the game version directly, we store some settings about how to parse the pack file independently
+/// from the build configs, so we can parse the pack before resolving an engine version.
+#[derive(Debug, Default, Clone)]
+pub struct PackConfig {
+    /// The magic constant present in the header of pack files.
+    header_magic: Option<u32>,
+}
+
+impl PackConfig {
+    // defaults are implemented here so we don't have to look them up in the build catalog; it's a little weird but it works
+    pub fn header_magic(&self) -> u32 {
+        const PACK_HEADER_MAGIC: u32 = 0x43504447; // "GDPC" in ASCII
+        self.header_magic.unwrap_or(PACK_HEADER_MAGIC)
+    }
+}
+
+impl From<SerializedEngineBuild> for PackConfig {
+    fn from(value: SerializedEngineBuild) -> Self {
+        Self {
+            header_magic: value.pck_header_magic,
+        }
+    }
+}
+
+impl From<EngineBuild> for PackConfig {
+    fn from(value: EngineBuild) -> Self {
+        Self {
+            header_magic: value.pck_header_magic,
+        }
+    }
+}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[non_exhaustive]
@@ -70,15 +106,16 @@ pub struct Pack {
 
 impl Pack {
     // TODO: rewrite this to use marshalling
-    pub fn parse<R>(mut f: R) -> crate::Result<Self>
+    pub fn parse<R>(mut f: R, config: impl Into<PackConfig>) -> crate::Result<Self>
     where
         R: Read + Seek,
     {
+        let config = config.into();
         let pck_start_pos = f.stream_position()?;
 
         let magic = f.read_u32::<LittleEndian>()?;
 
-        if magic != PACK_HEADER_MAGIC {
+        if magic != config.header_magic() {
             return Err(Error::BadData);
         }
 

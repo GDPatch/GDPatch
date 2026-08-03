@@ -228,7 +228,7 @@ pub enum GDScriptBuild {
 #[derive(Debug, Clone)]
 pub struct GDScriptBuilds(pub HashMap<String, GDScriptBuild>);
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[non_exhaustive]
 #[serde(deny_unknown_fields)]
 pub struct SerializedGDScriptBuild {
@@ -635,6 +635,9 @@ pub struct EngineBuild {
     /// GDScript information (token order + builtin function order for GDScript 1.x)
     pub gdscript: GDScriptBuild,
 
+    /// The magic constant present in the header of pack files.
+    pub pck_header_magic: Option<u32>,
+
     /// Whether paths in the pack file no longer contain the `res://` prefix or not. Official builds changed this in
     /// [`2ac562cdf8366876381902a0667fec704e357495`] (4.4).
     ///
@@ -834,7 +837,7 @@ impl VersionSpecifier {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[non_exhaustive]
 #[serde(deny_unknown_fields)]
 pub struct SerializedEngineBuild {
@@ -850,10 +853,15 @@ pub struct SerializedEngineBuild {
     #[serde(default)]
     pub gdscript: Option<String>,
 
+    /// The magic constant present in the header of pack files.
+    #[serde(default)]
+    pub pck_header_magic: Option<u32>,
+
     /// Whether paths in the pack file no longer contain the `res://` prefix or not. Official builds changed this in
     /// [`2ac562cdf8366876381902a0667fec704e357495`] (4.4).
     ///
     /// [`2ac562cdf8366876381902a0667fec704e357495`]: https://github.com/godotengine/godot/commit/2ac562cdf8366876381902a0667fec704e357495
+    #[serde(default)]
     pub has_prefixless_pck_paths: Option<bool>,
 }
 
@@ -881,6 +889,9 @@ impl SerializedEngineBuild {
             commit: self.commit,
             gdscript,
 
+            pck_header_magic: self
+                .pck_header_magic
+                .or(parent.and_then(|p| p.pck_header_magic)),
             has_prefixless_pck_paths: self
                 .has_prefixless_pck_paths
                 .or(parent.map(|p| p.has_prefixless_pck_paths))
@@ -980,17 +991,105 @@ impl SerializedBuildsFile {
     }
 }
 
-static BUNDLED_BUILDS: LazyLock<EngineBuilds> = LazyLock::new(|| {
+static BUNDLED_BUILDS: LazyLock<SerializedBuildsFile> = LazyLock::new(|| {
     static BUILDS_TEXT: &str = include_str!("../builds.toml");
-
-    let unresolved = toml::from_str::<SerializedBuildsFile>(BUILDS_TEXT)
-        .expect("bundled builds.toml is invalid");
-
-    unresolved
-        .resolve()
-        .expect("bundled builds.toml is invalid")
+    toml::from_str::<SerializedBuildsFile>(BUILDS_TEXT).expect("bundled builds.toml is invalid")
 });
 
-pub fn bundled_builds() -> &'static EngineBuilds {
+pub fn bundled_builds() -> &'static SerializedBuildsFile {
     &BUNDLED_BUILDS
+}
+
+pub fn resolve_approximate_build(
+    pack_version: VersionSpecifier,
+    custom_engine: Option<SerializedEngineBuild>,
+    custom_gdscript: Option<SerializedGDScriptBuild>,
+) -> EngineBuild {
+    const CUSTOM_BUILD_FLAVOR: &str = "custom"; // TODO: should we change this?
+
+    // Resolve the pack version ahead of time, so we know what to use as a parent.
+    let pack_engine_build = {
+        let builds = bundled_builds()
+            .clone()
+            .resolve()
+            .expect("failed to resolve custom engine builds");
+
+        builds
+            .find_approximate_build(&pack_version)
+            .expect("failed to resolve pack engine build")
+            .clone()
+    };
+
+    let custom_version = if let Some(parent) = custom_engine.as_ref().and_then(|p| p.parent.clone())
+    {
+        // Use the engine's parent version, with a custom flavor.
+        Some((
+            VersionSpecifier::new(
+                parent.major,
+                parent.minor,
+                parent.patch,
+                parent.sub_patch,
+                CUSTOM_BUILD_FLAVOR,
+            ),
+            parent,
+        ))
+    } else if custom_engine.is_some() || custom_gdscript.is_some() {
+        // Use the pack file's resolved version, with a custom flavor.
+        let pack_version = pack_engine_build.version.clone();
+
+        Some((
+            VersionSpecifier::new(
+                pack_version.major,
+                pack_version.minor,
+                pack_version.patch,
+                pack_version.sub_patch,
+                CUSTOM_BUILD_FLAVOR,
+            ),
+            pack_version,
+        ))
+    } else {
+        None
+    };
+
+    if let Some((version, parent)) = custom_version {
+        // GDScript builds are identified by a string, in which case we can reuse the engine version.
+        let gdscript_version = version.to_string();
+
+        // Add our custom engine build.
+        let mut custom_engine = custom_engine.unwrap_or_default();
+
+        // Set the parent engine/GDScript version if it wasn't set by the user.
+        if custom_engine.parent.is_none() {
+            custom_engine.parent = Some(parent);
+        }
+        if custom_gdscript.is_some() && custom_engine.gdscript.is_none() {
+            custom_engine.gdscript = Some(gdscript_version.clone());
+        }
+
+        // Add them to the build catalog and resolve our custom version.
+        let mut custom_builds = bundled_builds().clone();
+
+        custom_builds
+            .engine
+            .0
+            .insert(version.clone(), custom_engine);
+        if let Some(custom_gdscript) = custom_gdscript {
+            custom_builds
+                .gdscript
+                .0
+                .insert(gdscript_version, custom_gdscript);
+        }
+
+        let builds = custom_builds
+            .resolve()
+            .expect("failed to resolve custom engine builds");
+
+        builds
+            .find_exact_build(&version)
+            .expect("failed to resolve custom engine build")
+            .clone()
+    } else {
+        // No custom version to worry about, just return the pack engine build.
+        pack_engine_build
+    }
 }

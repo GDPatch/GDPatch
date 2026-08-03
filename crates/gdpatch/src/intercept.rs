@@ -3,7 +3,7 @@ use crate::GDPatch;
 use crate::virtual_pack::VirtualPack;
 use color_eyre::eyre::eyre;
 use filesilly::{Stream, StreamFactory};
-use gdpatch_godot::pack::{PACK_HEADER_MAGIC, Pack};
+use gdpatch_godot::pack::{Pack, PackConfig};
 use std::env::{current_dir, current_exe};
 use std::fs::File;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
@@ -104,6 +104,9 @@ enum PackStreamInner {
         /// The file being operated on.
         file: File,
 
+        /// The config to parse the pack file with.
+        config: PackConfig,
+
         // This should probably be changed to a more robust detection method, but we assume that
         // the file we're reading isn't a pack after a certain amount of reads without a pack
         // header. Ccurrently this threshold is set to 16 reads.
@@ -123,10 +126,11 @@ struct PackStream(PackStreamInner);
 
 impl PackStream {
     /// Creates a new [`PackStream`] in an unknown state.
-    pub fn new(path: PathBuf, file: File) -> PackStream {
+    pub fn new(path: PathBuf, file: File, config: PackConfig) -> PackStream {
         PackStream(PackStreamInner::Unknown {
             path,
             file,
+            config,
             read_count: 0,
         })
     }
@@ -145,6 +149,7 @@ impl Read for PackStream {
             PackStreamInner::Unknown {
                 path,
                 mut file,
+                config,
                 mut read_count,
             } => {
                 let offset = file.stream_position()?;
@@ -181,10 +186,10 @@ impl Read for PackStream {
                         };
 
                         if let Some(possible_magic) = possible_magic
-                            && possible_magic == PACK_HEADER_MAGIC
+                            && possible_magic == config.header_magic()
                         {
                             file.seek(SeekFrom::Start(offset))?;
-                            match Pack::parse(&mut file) {
+                            match Pack::parse(&mut file, config.clone()) {
                                 Ok(pack) => {
                                     debug!(file_count = %pack.files.len(), "found PCK file!");
 
@@ -213,6 +218,7 @@ impl Read for PackStream {
                         self.0 = PackStreamInner::Unknown {
                             path,
                             file,
+                            config,
                             read_count,
                         };
                         Ok(n)
@@ -298,7 +304,7 @@ impl Stream for PackStream {}
 /// Main entrypoint for GDPatch patching functionality. Handles patching Godot packs in memory, as
 /// well as direct GDScript communication via special paths.
 #[derive(Debug)]
-pub struct GDPatchStreamFactory;
+pub struct GDPatchStreamFactory(pub PackConfig);
 
 impl StreamFactory for GDPatchStreamFactory {
     fn create_stream(&mut self, path: &Path) -> io::Result<Option<Box<dyn Stream>>> {
@@ -334,7 +340,7 @@ impl StreamFactory for GDPatchStreamFactory {
         if asked_for_pck || asked_for_exe {
             let file = File::open(path)?;
             let path = path.to_owned();
-            return Ok(Some(Box::new(PackStream::new(path, file))));
+            return Ok(Some(Box::new(PackStream::new(path, file, self.0.clone()))));
         }
 
         Ok(None)

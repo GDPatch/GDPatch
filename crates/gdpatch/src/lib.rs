@@ -34,10 +34,8 @@ use crate::mods::{BUILTIN_MOD_ID, Mods};
 use crate::virtual_pack::builder::VirtualPackBuilder;
 use crate::virtual_pack::{FileContents, VirtualPack};
 pub use config::Config;
-use gdpatch_godot::build::{
-    EngineBuilds, GDScriptBuild, SerializedBuildsFile, VersionSpecifier, bundled_builds,
-};
-use gdpatch_godot::pack::Pack;
+use gdpatch_godot::build::{GDScriptBuild, VersionSpecifier, resolve_approximate_build};
+use gdpatch_godot::pack::{Pack, PackConfig};
 use gdpatch_godot::{ReadableMarshalBuffer, UIDCache, WritableMarshalBuffer};
 
 static INSTANCE: OnceLock<GDPatch> = OnceLock::new();
@@ -47,7 +45,6 @@ pub struct GDPatch {
     pub config: Config,
     root_directory: PathBuf,
     virtual_packs: RwLock<HashMap<PathBuf, Arc<VirtualPack>>>,
-    custom_engine_builds: RwLock<Option<EngineBuilds>>,
     mods: RwLock<Option<Mods>>,
 }
 
@@ -57,7 +54,6 @@ impl GDPatch {
             config,
             root_directory,
             virtual_packs: Default::default(),
-            custom_engine_builds: RwLock::new(None),
             mods: RwLock::new(None),
         }
     }
@@ -118,6 +114,16 @@ impl GDPatch {
         }
     }
 
+    /// Returns the global instance.
+    ///
+    /// # Panics
+    /// This will panic if [`setup_instance`] hasn't been called.
+    pub fn instance() -> &'static GDPatch {
+        INSTANCE
+            .get()
+            .expect("tried to get GDPatch before initialization")
+    }
+
     /// Configures the global instance.
     pub fn setup_instance_logging_etc() -> color_eyre::Result<()> {
         let game_directory = std::env::current_exe()
@@ -154,24 +160,34 @@ impl GDPatch {
         info!("This is GDPatch {}, heya!", env!("CARGO_PKG_VERSION"));
 
         // Setup file hooks.
+        let pack_config = self
+            .config
+            .engine
+            .clone()
+            .map(PackConfig::from)
+            .unwrap_or_default();
         filesilly::init()?;
-        filesilly::set(Box::new(GDPatchStreamFactory));
+        filesilly::set(Box::new(GDPatchStreamFactory(pack_config.clone())));
 
         // Search for mods.
         let mods_directory = self.root_directory.join("mods");
         let configs_directory = self.root_directory.join("configs");
 
-        let mods = match Mods::search_and_load(&mods_directory, &configs_directory) {
-            Ok(mods) => mods,
-            Err(errs) => {
-                let pretty_errs = errs
-                    .into_iter()
-                    .map(|report| format!("- {}\n", report))
-                    .collect::<String>();
+        // TODO: consider if mods should also take the modded pack config
+        // (most mods are being developed in the vanilla editor, even if the game uses a modded pack)
+        let mods =
+            match Mods::search_and_load(&mods_directory, &configs_directory, PackConfig::default())
+            {
+                Ok(mods) => mods,
+                Err(errs) => {
+                    let pretty_errs = errs
+                        .into_iter()
+                        .map(|report| format!("- {}\n", report))
+                        .collect::<String>();
 
-                bail!("Mod loading has failed:\n{pretty_errs}");
-            }
-        };
+                    bail!("Mod loading has failed:\n{pretty_errs}");
+                }
+            };
 
         info!(count = %mods.0.len(), "Mods loaded!");
 
@@ -192,45 +208,7 @@ impl GDPatch {
         let existing = self.mods.write().replace(mods);
         assert!(existing.is_none(), "ran mod initialization twice!");
 
-        // Load custom engine builds if present.
-        let custom_builds_path = self.root_directory.join("builds.toml");
-        if custom_builds_path.exists() {
-            let result = try {
-                let str = std::fs::read_to_string(custom_builds_path)
-                    .context("failed to read custom builds.toml")?;
-
-                let builds = toml::from_str::<SerializedBuildsFile>(&str)
-                    .context("failed to parse custom builds.toml")?;
-
-                builds
-                    .resolve()
-                    .context("failed to resolve custom engine builds")?
-            };
-            match result {
-                Ok(custom_engine_builds) => {
-                    let existing = self
-                        .custom_engine_builds
-                        .write()
-                        .replace(custom_engine_builds);
-                    assert!(existing.is_none(), "loaded custom engine builds twice!");
-                }
-                Err(err) => {
-                    error!(err = %err, "failed to read custom build metadata");
-                }
-            }
-        };
-
         Ok(())
-    }
-
-    /// Returns the global instance.
-    ///
-    /// # Panics
-    /// This will panic if [`setup_instance`] hasn't been called.
-    pub fn instance() -> &'static GDPatch {
-        INSTANCE
-            .get()
-            .expect("tried to get GDPatch before initialization")
     }
 
     /// Sets up the logging configuration.
@@ -322,31 +300,22 @@ impl GDPatch {
             }
         }
 
-        // resolve engine build
+        // Resolve engine build.
         let engine_build = {
-            let custom_engine_builds = self.custom_engine_builds.read();
-            let (engine_builds, is_custom) =
-                if let Some(custom_builds) = &custom_engine_builds.as_ref() {
-                    (*custom_builds, true)
-                } else {
-                    (bundled_builds(), false)
-                };
+            let pack_version = VersionSpecifier::new(
+                old_pack.engine_version.0,
+                old_pack.engine_version.1,
+                old_pack.engine_version.2,
+                0,
+                "stable", // TODO: do we need to let the user specify custom flavors like this if they can already override the build?
+            );
 
-            let version = self.config.engine.version.clone().unwrap_or_else(|| {
-                VersionSpecifier::new(
-                    old_pack.engine_version.0,
-                    old_pack.engine_version.1,
-                    old_pack.engine_version.2,
-                    0,
-                    &self.config.engine.flavor,
-                )
-            });
-
-            let engine_build = engine_builds
-                .find_approximate_build(&version)
-                .expect("failed to resolve engine build");
-
-            info!(version = %engine_build.version, "using {}engine build", if is_custom { "custom " } else { "" });
+            let engine_build = resolve_approximate_build(
+                pack_version,
+                self.config.engine.clone(),
+                self.config.gdscript.clone(),
+            );
+            info!(version = %engine_build.version, "using engine build");
 
             if engine_build.version.minor != old_pack.engine_version.1
                 || engine_build.version.patch != old_pack.engine_version.2
@@ -702,7 +671,7 @@ impl GDPatch {
             );
         }
 
-        let virtual_pack = Arc::new(builder.build(header_pos_within_file));
+        let virtual_pack = Arc::new(builder.build(engine_build, header_pos_within_file));
         self.virtual_packs
             .write()
             .insert(path, virtual_pack.clone());
