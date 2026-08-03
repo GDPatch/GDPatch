@@ -636,7 +636,7 @@ pub struct EngineBuild {
     pub gdscript: GDScriptBuild,
 
     /// The magic constant present in the header of pack files.
-    pub pck_header_magic: Option<u32>,
+    pub pck_header_magic: Option<String>,
 
     /// Whether paths in the pack file no longer contain the `res://` prefix or not. Official builds changed this in
     /// [`2ac562cdf8366876381902a0667fec704e357495`] (4.4).
@@ -855,7 +855,7 @@ pub struct SerializedEngineBuild {
 
     /// The magic constant present in the header of pack files.
     #[serde(default)]
-    pub pck_header_magic: Option<u32>,
+    pub pck_header_magic: Option<String>,
 
     /// Whether paths in the pack file no longer contain the `res://` prefix or not. Official builds changed this in
     /// [`2ac562cdf8366876381902a0667fec704e357495`] (4.4).
@@ -891,7 +891,7 @@ impl SerializedEngineBuild {
 
             pck_header_magic: self
                 .pck_header_magic
-                .or(parent.and_then(|p| p.pck_header_magic)),
+                .or(parent.and_then(|p| p.pck_header_magic.clone())),
             has_prefixless_pck_paths: self
                 .has_prefixless_pck_paths
                 .or(parent.map(|p| p.has_prefixless_pck_paths))

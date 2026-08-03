@@ -31,14 +31,21 @@ const PACK_FILE_DELTA: u32 = 1 << 2;
 #[derive(Debug, Default, Clone)]
 pub struct PackConfig {
     /// The magic constant present in the header of pack files.
-    header_magic: Option<u32>,
+    header_magic: Option<String>,
 }
 
 impl PackConfig {
     // defaults are implemented here so we don't have to look them up in the build catalog; it's a little weird but it works
     pub fn header_magic(&self) -> u32 {
         const PACK_HEADER_MAGIC: u32 = 0x43504447; // "GDPC" in ASCII
-        self.header_magic.unwrap_or(PACK_HEADER_MAGIC)
+        self.header_magic
+            .clone()
+            .map(|s| {
+                let mut bytes = [0u8; 4];
+                bytes.copy_from_slice(&s.as_bytes()[..4]);
+                u32::from_le_bytes(bytes)
+            })
+            .unwrap_or(PACK_HEADER_MAGIC)
     }
 }
 
