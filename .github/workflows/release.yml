@@ -1,5 +1,11 @@
-name: Build
-on: [push, pull_request]
+name: Build and release
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -7,7 +13,6 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
-      fail-fast: false
       matrix:
         include:
           #- target: x86_64-pc-windows-msvc
@@ -53,3 +58,27 @@ jobs:
         with:
           name: gdpatch-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/${{ matrix.filename }}
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: gdpatch-*
+          merge-multiple: true
+      - name: Print changelog
+        run: |
+          git tag --list --format='%(contents:body)' ${{ github.ref_name }} > ${{ github.workspace }}-CHANGELOG.md
+          sed -i -z 's/^\s*//; s/\s*$//' ${{ github.workspace }}-CHANGELOG.md
+      - name: Release
+        uses: softprops/action-gh-release@v3
+        with:
+          body_path: ${{ github.workspace }}-CHANGELOG.md
+          working_directory: dist
+          files: "*.*"
