@@ -1,8 +1,8 @@
 [package]
 name = "gdpatch"
-version = "0.1.0"
 description = "A versatile cross-platform cross-version Godot mod loader"
 publish = false
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 
