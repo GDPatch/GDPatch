@@ -16,7 +16,7 @@ use mlua::{
 };
 use serde::Deserialize;
 use std::{cmp::Ordering, collections::HashMap, path::PathBuf, sync::Weak};
-use tracing::{error, info, info_span};
+use tracing::{error, info, info_span, warn};
 
 use crate::{GDPatch, bindings::LuaVariant};
 
@@ -219,7 +219,12 @@ impl PatcherCallbacks {
                 let source = reconstruct_script_text(&tokens);
 
                 let new_source = match function.call::<String>((context, source.clone())) {
-                    Ok(new_source) => new_source,
+                    Ok(new_source) => {
+                        if source == new_source {
+                            warn!("patcher returned identical script output");
+                        }
+                        new_source
+                    }
                     Err(err) => {
                         error!(%err, "failed to run patcher callback");
                         source
