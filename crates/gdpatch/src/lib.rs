@@ -401,7 +401,7 @@ impl GDPatch {
         // Rebuild files in the virtual pack.
         for (path, file) in &old_pack.files {
             let normalized_path = strip_path_prefix(path);
-            let _entered = debug_span!("pack_entry", path = %normalized_path).entered();
+            let _entered = info_span!("pack_entry", path = %normalized_path).entered();
 
             let contents = FileContents::Disk {
                 mapping: mapping.clone(),
@@ -523,7 +523,7 @@ impl GDPatch {
                 };
 
                 for (mut path, contents) in mod_pack.files() {
-                    let _entered = info_span!("pack_entry", path = %path).entered();
+                    let _entered = info_span!("mod_pack_entry", path = %path).entered();
 
                     // Add/remove res:// prefix if required.
                     path = ensure_path_prefix(&path);

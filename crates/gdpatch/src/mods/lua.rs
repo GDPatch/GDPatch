@@ -221,7 +221,7 @@ impl PatcherCallbacks {
                 let new_source = match function.call::<String>((context, source.clone())) {
                     Ok(new_source) => new_source,
                     Err(err) => {
-                        error!(%err, %path, mod_id, "failed to run patcher callback");
+                        error!(%err, "failed to run patcher callback");
                         source
                     }
                 };
@@ -262,7 +262,7 @@ impl PatcherCallbacks {
                     Ok(new_ast) => {
                         ast = new_ast;
                     }
-                    Err(err) => error!(%err, %path, mod_id, "failed to run patcher callback"),
+                    Err(err) => error!(%err, "failed to run patcher callback"),
                 }
             }
         }
@@ -281,6 +281,8 @@ impl PatcherCallbacks {
             ..
         } in &self.patch_project_settings
         {
+            let _entered =
+                info_span!("patcher", mod = %mod_id, type = "project_settings").entered();
             let lua = lua.upgrade();
 
             let entries = lua.create_table()?;
@@ -308,7 +310,7 @@ impl PatcherCallbacks {
 
                     settings.inner = entries;
                 }
-                Err(err) => error!(%err, mod_id, "failed to run patcher callback"),
+                Err(err) => error!(%err, "failed to run patcher callback"),
             }
         }
 
