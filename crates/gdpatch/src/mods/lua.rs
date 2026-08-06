@@ -114,7 +114,9 @@ struct ModLuaState {
 
 #[derive(Deserialize, Default, Clone)]
 struct PatcherCallbackOptions {
+    #[serde(default)]
     before: Vec<String>,
+    #[serde(default)]
     after: Vec<String>,
 }
 
