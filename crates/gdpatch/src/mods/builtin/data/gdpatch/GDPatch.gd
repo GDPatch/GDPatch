@@ -16,6 +16,7 @@ func _init() -> void:
   })
   self.mods.assign(resp.value)
 
+func _ready() -> void:
   for mod in self.mods:
     self._load_mod(mod["id"])
 
