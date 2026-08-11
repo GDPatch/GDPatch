@@ -280,7 +280,7 @@ impl Parser<'_> {
     }
 
     /// Advances to the next token without updating the previous token.
-    fn advance_inner(&mut self, add_to_consumed: bool) -> (Token, Span) {
+    fn advance_inner(&mut self) -> (Token, Span) {
         if matches!(self.current.0, Token::Eof) {
             panic!("trying to advance past end of stream");
         }
@@ -289,9 +289,7 @@ impl Parser<'_> {
             panic!("tokenizer returned None without returning EOF")
         };
 
-        if add_to_consumed {
-            self.consumed_tokens.push(next_token.clone());
-        }
+        self.consumed_tokens.push(next_token.clone());
 
         if matches!(
             next_token.0,
@@ -313,10 +311,10 @@ impl Parser<'_> {
         next_token
     }
 
-    fn advance0(&mut self, add_to_consumed: bool) {
+    fn advance(&mut self) {
         self.lambda_ended = false;
 
-        let next_token = self.advance_inner(add_to_consumed);
+        let next_token = self.advance_inner();
         let previous = mem::replace(&mut self.current, next_token);
         self.previous = Some(previous);
 
@@ -329,12 +327,8 @@ impl Parser<'_> {
                 break;
             }
 
-            self.advance_inner(true);
+            self.current = self.advance_inner();
         }
-    }
-
-    fn advance(&mut self) {
-        self.advance0(true);
     }
 
     fn previous(&self) -> &Spanned<Token> {
@@ -354,7 +348,8 @@ impl Parser<'_> {
                 self.current.0,
                 Token::Newline { .. } | Token::Indent | Token::Dedent
             ) {
-                self.advance0(false);
+                self.consumed_tokens.pop();
+                self.advance();
             }
         }
     }
@@ -3357,7 +3352,7 @@ impl Parser<'_> {
                 self.current.0,
                 Token::Dedent | Token::Indent | Token::Newline { .. }
             ) {
-                self.current = self.advance_inner(true);
+                self.current = self.advance_inner();
             }
 
             let difference = self.tokenizer.pop_expression_indented_block();
