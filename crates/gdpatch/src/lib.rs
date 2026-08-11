@@ -160,7 +160,12 @@ impl GDPatch {
         info!("This is GDPatch {}, heya!", env!("CARGO_PKG_VERSION"));
 
         // Setup file hooks.
-        let pack_config = self.config.engine.pack.clone().unwrap_or_default();
+        let pack_config = self
+            .config
+            .engine
+            .clone()
+            .map(|e| e.pack)
+            .unwrap_or_default();
         filesilly::init()?;
         filesilly::set(Box::new(GDPatchStreamFactory(pack_config.clone())));
 
@@ -305,12 +310,9 @@ impl GDPatch {
                 "stable", // TODO: do we need to let the user specify custom flavors like this if they can already override the build?
             );
 
-            let engine_build = resolve_approximate_build(
-                pack_version,
-                self.config.engine.engine.clone(),
-                self.config.gdscript.clone(),
-            )
-            .expect("failed to resolve engine build");
+            let custom_engine = self.config.engine.clone().map(|e| e.engine);
+            let engine_build = resolve_approximate_build(pack_version, custom_engine)
+                .expect("failed to resolve engine build");
             info!(version = %engine_build.version, "using engine build");
 
             if engine_build.version.minor != old_pack.engine_version.1
@@ -663,7 +665,12 @@ impl GDPatch {
             );
         }
 
-        let pack_config = self.config.engine.pack.clone().unwrap_or_default();
+        let pack_config = self
+            .config
+            .engine
+            .clone()
+            .map(|e| e.pack)
+            .unwrap_or_default();
         let virtual_pack = Arc::new(builder.build(pack_config, header_pos_within_file));
         self.virtual_packs
             .write()

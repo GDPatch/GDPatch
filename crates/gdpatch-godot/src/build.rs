@@ -958,7 +958,6 @@ pub fn bundled_builds() -> &'static EngineBuilds {
 pub fn resolve_approximate_build(
     pack_version: VersionSpecifier,
     custom_engine: Option<SerializedEngineBuild>,
-    custom_gdscript: Option<SerializedGDScriptBuild>,
 ) -> color_eyre::Result<EngineBuild> {
     const CUSTOM_BUILD_FLAVOR: &str = "custom"; // TODO: should we change this?
 
@@ -982,7 +981,7 @@ pub fn resolve_approximate_build(
             ),
             parent,
         ))
-    } else if custom_engine.is_some() || custom_gdscript.is_some() {
+    } else if custom_engine.is_some() {
         // Use the pack file's resolved version, with a custom flavor.
         let pack_version = pack_engine_build.version.clone();
 

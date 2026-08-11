@@ -4,10 +4,7 @@ use figment::{
     Figment,
     providers::{Env, Format, Serialized, Toml},
 };
-use gdpatch_godot::{
-    build::{SerializedEngineBuild, SerializedGDScriptBuild},
-    pack::PackConfig,
-};
+use gdpatch_godot::{build::SerializedEngineBuild, pack::PackConfig};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use toml_edit::{DocumentMut, RawString};
@@ -22,10 +19,7 @@ pub struct Config {
     pub debug: ConfigDebug,
 
     /// Engine version overrides.
-    pub engine: ConfigEngine,
-
-    /// GDScript version overrides.
-    pub gdscript: Option<SerializedGDScriptBuild>,
+    pub engine: Option<ConfigEngine>,
 }
 
 #[derive(Deserialize, Serialize, Debug, DocumentedFieldsOpt)]
@@ -71,13 +65,13 @@ impl From<LogLevel> for LevelFilter {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Default)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct ConfigEngine {
-    #[serde(default, flatten)]
-    pub engine: Option<SerializedEngineBuild>,
+    #[serde(flatten, default)]
+    pub engine: SerializedEngineBuild,
 
-    #[serde(default, flatten)]
-    pub pack: Option<PackConfig>,
+    #[serde(flatten, default)]
+    pub pack: PackConfig,
 }
 
 #[derive(Deserialize, Serialize, Debug, DocumentedFieldsOpt, Default)]
