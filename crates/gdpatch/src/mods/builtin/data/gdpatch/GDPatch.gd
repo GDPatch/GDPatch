@@ -1,6 +1,7 @@
 extends Node
 
 const MOD_ROOT: String = "res://gdpatch/mods/"
+const BUILTIN_MOD: String = "gdpatch"
 var mod_instances = {}
 var mutex: Mutex
 var file: FileAccess
@@ -18,7 +19,9 @@ func _init() -> void:
 
 func _ready() -> void:
   for mod in self.mods:
-    self._load_mod(mod["id"])
+    var mod_id = mod["id"]
+    if mod_id != BUILTIN_MOD:
+      self._load_mod(mod_id)
 
 func _process(_delta: float) -> void:
   var data = self._read_response()
@@ -76,6 +79,20 @@ func _load_mod(mod_id: String) -> Node:
     mod_instances[mod_id] = node
 
     # print("Loaded mod " + mod_id + " as script")
+    return node
+
+  var binary_script_path = MOD_ROOT + mod_id + "/mod.gdc"
+  if FileAccess.file_exists(binary_script_path):
+    var script = load(binary_script_path)
+    var node = Node.new()
+
+    node.name = mod_id
+    node.set_script(script)
+
+    self.add_child(node)
+    mod_instances[mod_id] = node
+
+    # print("Loaded mod " + mod_id + " as binary script")
     return node
 
   # printerr("No files available for mod " + mod_id + "!")
