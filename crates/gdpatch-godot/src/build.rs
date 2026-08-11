@@ -4,24 +4,16 @@ use color_eyre::eyre::{OptionExt, bail, eyre};
 use serde::de::{Error, Unexpected};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
-use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, btree_map};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use std::sync::LazyLock;
 use thiserror::Error;
 
-/// Tokenizer information specific to the GDScript V1 tokenizer.
+/// GDScript tokenizer and parser information.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub struct GDScriptV1Build {
-    // TODO: add built in function names for V1 binary tokenization
-}
-
-/// Tokenizer information specific to the GDScript V2 tokenizer.
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub struct GDScriptV2Build {
+pub struct GDScriptBuild {
     // Binary tokenizer info
     /// Version number in the bytecode header. Unset if this version doesn't have a bytecode
     /// format.
@@ -214,19 +206,6 @@ where
         ))
     }
 }
-
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub enum GDScriptBuild {
-    /// GDScript 1.x (3.x engines).
-    V1(GDScriptV1Build),
-
-    /// GDScript 2.x (4.x engines).
-    V2(GDScriptV2Build),
-}
-
-#[derive(Debug, Clone)]
-pub struct GDScriptBuilds(pub HashMap<String, GDScriptBuild>);
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[non_exhaustive]
@@ -469,7 +448,7 @@ impl SerializedGDScriptBuild {
                 bail!("GDScript V1 isn't implemented yet");
             }
 
-            (Some(2), None) => GDScriptBuild::V2(expand_resolve!(#error self GDScriptV2Build {
+            (Some(2), None) => expand_resolve!(#error self GDScriptBuild {
                 tokenizer_version,
                 tokens,
                 allow_mixed_indentation_when_multiline,
@@ -499,46 +478,39 @@ impl SerializedGDScriptBuild {
                 allow_keywords_as_attributes,
                 has_72979_annotation_parsing,
                 has_77744_suite_changes,
-            })),
+            }),
 
-            // inherit from parent
-            (None, Some(GDScriptBuild::V1(_parent))) => {
-                bail!("GDScript V1 isn't implemented yet");
-            }
-
-            (None, Some(GDScriptBuild::V2(parent))) => {
-                GDScriptBuild::V2(expand_resolve!(parent self GDScriptV2Build {
-                    tokenizer_version,
-                    tokens,
-                    allow_mixed_indentation_when_multiline,
-                    has_improved_invalid_character_error,
-                    has_literal_sign_handling,
-                    has_new_number_underscore_parsing,
-                    has_raw_strings,
-                    has_when,
-                    need_digits_in_hex_and_binary,
-                    has_fixed_continuation_lines,
-                    has_uppercase_number_types,
-                    has_variadic_functions,
-                    expands_tabs_in_span_column,
-                    allow_zwsp_as_whitespace,
-                    allow_mixed_indentation_on_blank_lines,
-                    has_extra_word_in_binary_script_header,
-                    has_fixed_multiline_handling_in_super_calls,
-                    has_early_bail_in_super_calls,
-                    allow_multiline_array_dictionary_patterns,
-                    allow_preload_trailing_comma,
-                    has_static_variables,
-                    has_is_not,
-                    allow_empty_parentheses_in_getter_declaration,
-                    has_match_error_recovery,
-                    has_dictionary_error_recovery,
-                    has_typed_for_loops,
-                    allow_keywords_as_attributes,
-                    has_72979_annotation_parsing,
-                    has_77744_suite_changes,
-                }))
-            }
+            (None, Some(parent)) => expand_resolve!(parent self GDScriptBuild {
+                tokenizer_version,
+                tokens,
+                allow_mixed_indentation_when_multiline,
+                has_improved_invalid_character_error,
+                has_literal_sign_handling,
+                has_new_number_underscore_parsing,
+                has_raw_strings,
+                has_when,
+                need_digits_in_hex_and_binary,
+                has_fixed_continuation_lines,
+                has_uppercase_number_types,
+                has_variadic_functions,
+                expands_tabs_in_span_column,
+                allow_zwsp_as_whitespace,
+                allow_mixed_indentation_on_blank_lines,
+                has_extra_word_in_binary_script_header,
+                has_fixed_multiline_handling_in_super_calls,
+                has_early_bail_in_super_calls,
+                allow_multiline_array_dictionary_patterns,
+                allow_preload_trailing_comma,
+                has_static_variables,
+                has_is_not,
+                allow_empty_parentheses_in_getter_declaration,
+                has_match_error_recovery,
+                has_dictionary_error_recovery,
+                has_typed_for_loops,
+                allow_keywords_as_attributes,
+                has_72979_annotation_parsing,
+                has_77744_suite_changes,
+            }),
 
             // specified a version and a parent
             (Some(_), Some(_)) => {
@@ -558,67 +530,6 @@ impl SerializedGDScriptBuild {
                 );
             }
         })
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct SerializedGDScriptBuilds(pub HashMap<String, SerializedGDScriptBuild>);
-
-impl SerializedGDScriptBuilds {
-    pub fn resolve(mut self) -> crate::Result<GDScriptBuilds, Report> {
-        // already resolved entries
-        let mut resolved = HashMap::new();
-
-        // stack of entries that are waiting to resolve due to their parents not being resolved yet
-        let mut current_stack = Vec::new();
-
-        fn resolve<'a>(
-            serialized_builds: &mut HashMap<String, SerializedGDScriptBuild>,
-            resolved_builds: &'a mut HashMap<String, GDScriptBuild>,
-            current_stack: &mut Vec<String>,
-            id: String,
-        ) -> crate::Result<&'a GDScriptBuild, Report> {
-            current_stack.push(id.clone());
-
-            // check if already resolved
-            if resolved_builds.contains_key(&id) {
-                return Ok(&resolved_builds[&id]);
-            }
-
-            // remove build from builds list
-            let serialized_build = serialized_builds
-                .remove(&id)
-                .ok_or_else(|| eyre!("unknown GDScript build {} in parent dependencies", &id))?;
-
-            // resolve parent first
-            let parent = match &serialized_build.parent {
-                None => None,
-                Some(parent_id) => Some(resolve(
-                    serialized_builds,
-                    resolved_builds,
-                    current_stack,
-                    parent_id.clone(),
-                )?),
-            };
-
-            let build = serialized_build.resolve(parent)?;
-
-            let Entry::Vacant(entry) = resolved_builds.entry(id.clone()) else {
-                unreachable!()
-            };
-
-            let build_ref = entry.insert(build);
-            current_stack.pop();
-
-            Ok(&*build_ref)
-        }
-
-        // remove random entry from builds and resolve it
-        while let Some(version) = self.0.keys().next().cloned() {
-            resolve(&mut self.0, &mut resolved, &mut current_stack, version)?;
-        }
-
-        Ok(GDScriptBuilds(resolved))
     }
 }
 
@@ -851,7 +762,7 @@ pub struct SerializedEngineBuild {
 
     /// GDScript information.
     #[serde(default)]
-    pub gdscript: Option<String>,
+    pub gdscript: Option<SerializedGDScriptBuild>,
 
     /// The magic constant present in the header of pack files.
     #[serde(default)]
@@ -868,7 +779,6 @@ pub struct SerializedEngineBuild {
 impl SerializedEngineBuild {
     pub fn resolve(
         self,
-        gdscript_versions: &GDScriptBuilds,
         version: VersionSpecifier,
         parent: Option<&EngineBuild>,
     ) -> crate::Result<EngineBuild, Report> {
@@ -877,11 +787,7 @@ impl SerializedEngineBuild {
                 bail!("build is missing field `gdscript`");
             }
             (None, Some(parent)) => parent.gdscript.clone(),
-            (Some(id), _) => gdscript_versions
-                .0
-                .get(&id)
-                .ok_or_else(|| eyre!("build references unknown GDScript build {}", id))?
-                .clone(),
+            (Some(build), parent) => build.clone().resolve(parent.map(|p| &p.gdscript))?,
         };
 
         Ok(EngineBuild {
@@ -907,10 +813,7 @@ pub struct SerializedEngineBuilds(pub HashMap<VersionSpecifier, SerializedEngine
 
 impl SerializedEngineBuilds {
     /// Resolves parent versions into flat builds.
-    pub fn resolve(
-        mut self,
-        gdscript_versions: &GDScriptBuilds,
-    ) -> crate::Result<EngineBuilds, Report> {
+    pub fn resolve(mut self) -> crate::Result<EngineBuilds, Report> {
         // already resolved entries
         let mut resolved = BTreeMap::new();
 
@@ -921,7 +824,6 @@ impl SerializedEngineBuilds {
             serialized_builds: &mut HashMap<VersionSpecifier, SerializedEngineBuild>,
             resolved_builds: &'a mut BTreeMap<VersionSpecifier, EngineBuild>,
             current_stack: &mut Vec<VersionSpecifier>,
-            gdscript_versions: &GDScriptBuilds,
             version: VersionSpecifier,
         ) -> crate::Result<&'a EngineBuild, Report> {
             current_stack.push(version.clone());
@@ -943,12 +845,11 @@ impl SerializedEngineBuilds {
                     serialized_builds,
                     resolved_builds,
                     current_stack,
-                    gdscript_versions,
                     parent_version.clone(),
                 )?),
             };
 
-            let build = serialized_build.resolve(gdscript_versions, version.clone(), parent)?;
+            let build = serialized_build.resolve(version.clone(), parent)?;
 
             let btree_map::Entry::Vacant(entry) = resolved_builds.entry(version.clone()) else {
                 unreachable!()
@@ -962,13 +863,7 @@ impl SerializedEngineBuilds {
 
         // remove random entry from builds and resolve it
         while let Some(version) = self.0.keys().next().cloned() {
-            resolve(
-                &mut self.0,
-                &mut resolved,
-                &mut current_stack,
-                gdscript_versions,
-                version,
-            )?;
+            resolve(&mut self.0, &mut resolved, &mut current_stack, version)?;
         }
 
         Ok(EngineBuilds(resolved))
@@ -978,16 +873,12 @@ impl SerializedEngineBuilds {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SerializedBuildsFile {
-    pub gdscript: SerializedGDScriptBuilds,
     pub engine: SerializedEngineBuilds,
 }
 
 impl SerializedBuildsFile {
     pub fn resolve(self) -> crate::Result<EngineBuilds, Report> {
-        let gdscript = self.gdscript.resolve()?;
-        let engine = self.engine.resolve(&gdscript)?;
-
-        Ok(engine)
+        self.engine.resolve()
     }
 }
 
@@ -1053,7 +944,7 @@ pub fn resolve_approximate_build(
 
     if let Some((version, parent)) = custom_version {
         // GDScript builds are identified by a string, in which case we can reuse the engine version.
-        let gdscript_version = version.to_string();
+        //let gdscript_version = version.to_string();
 
         // Add our custom engine build.
         let mut custom_engine = custom_engine.unwrap_or_default();
@@ -1062,9 +953,9 @@ pub fn resolve_approximate_build(
         if custom_engine.parent.is_none() {
             custom_engine.parent = Some(parent);
         }
-        if custom_gdscript.is_some() && custom_engine.gdscript.is_none() {
+        /*if custom_gdscript.is_some() && custom_engine.gdscript.is_none() {
             custom_engine.gdscript = Some(gdscript_version.clone());
-        }
+        }*/
 
         // Add them to the build catalog and resolve our custom version.
         let mut custom_builds = bundled_builds().clone();
@@ -1073,12 +964,12 @@ pub fn resolve_approximate_build(
             .engine
             .0
             .insert(version.clone(), custom_engine);
-        if let Some(custom_gdscript) = custom_gdscript {
+        /*if let Some(custom_gdscript) = custom_gdscript {
             custom_builds
                 .gdscript
                 .0
                 .insert(gdscript_version, custom_gdscript);
-        }
+        }*/
 
         let builds = custom_builds
             .resolve()

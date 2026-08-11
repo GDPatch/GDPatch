@@ -1,6 +1,10 @@
 # List of standard known versions.
 
-[gdscript."4.0-stable"]
+[engine."4.0-stable"]
+commit = "92bee43adba8d2401ef40e2480e53087bcb1eaf1"
+has_prefixless_pck_paths = false
+
+[engine."4.0-stable".gdscript]
 version = 2
 tokenizer_version = -1
 has_improved_invalid_character_error = false
@@ -131,11 +135,6 @@ tokens = [
     "Eof",
 ]
 
-[engine."4.0-stable"]
-commit = "92bee43adba8d2401ef40e2480e53087bcb1eaf1"
-gdscript = "4.0-stable"
-has_prefixless_pck_paths = false
-
 [engine."4.0.1-stable"]
 parent = "4.0-stable"
 commit = "cacf49999e3fb37281d66cc591ca8bebc5712d4d"
@@ -144,21 +143,20 @@ commit = "cacf49999e3fb37281d66cc591ca8bebc5712d4d"
 parent = "4.0.1-stable"
 commit = "7a0977ce2c558fe6219f0a14f8bd4d05aea8f019"
 
-[gdscript."4.0.3-stable"]
-parent = "4.0-stable"
-allow_mixed_indentation_when_multiline = true
-
 [engine."4.0.3-stable"]
 parent = "4.0.2-stable"
 commit = "5222a99f5d38cd5346254cefed8f65315bca4fcb"
-gdscript = "4.0.3-stable"
+gdscript.allow_mixed_indentation_when_multiline = true
 
 [engine."4.0.4-stable"]
 parent = "4.0.3-stable"
 commit = "fc0b241c9b0be3890712c3b72248d6bd790e7889"
 
-[gdscript."4.1-stable"] # 4.1
-parent = "4.0.3-stable"
+[engine."4.1-stable"]
+parent = "4.0.4-stable"
+commit = "970459615f6b2b4151742ec6d7ef8559f87fd5c5"
+
+[engine."4.1-stable".gdscript]
 has_improved_invalid_character_error = true
 has_new_number_underscore_parsing = true
 has_literal_sign_handling = true
@@ -166,11 +164,6 @@ allow_keywords_as_attributes = true
 has_static_variables = true
 has_72979_annotation_parsing = true
 has_77744_suite_changes = true
-
-[engine."4.1-stable"]
-parent = "4.0.4-stable"
-commit = "970459615f6b2b4151742ec6d7ef8559f87fd5c5"
-gdscript = "4.1-stable"
 
 [engine."4.1.1-stable"]
 parent = "4.1-stable"
@@ -188,8 +181,11 @@ commit = "fc79201851a16215f9554884aa242ed957801b10"
 parent = "4.1.3-stable"
 commit = "fe0e8e55752b0c2e64997025717b491703e0f8ad"
 
-[gdscript."4.2-stable"] # 4.2
-parent = "4.1-stable"
+[engine."4.2-stable"]
+parent = "4.1.4-stable"
+commit = "46dc277917a93cbf601bbcf0d27d00f6feeec0d5"
+
+[engine."4.2-stable".gdscript]
 has_raw_strings = true
 has_when = true
 has_typed_for_loops = true
@@ -296,26 +292,20 @@ tokens = [
     "Eof",
 ]
 
-[engine."4.2-stable"]
-parent = "4.1.4-stable"
-commit = "46dc277917a93cbf601bbcf0d27d00f6feeec0d5"
-gdscript = "4.2-stable"
-
 [engine."4.2.1-stable"]
 parent = "4.2-stable"
 commit = "b09f793f564a6c95dc76acc654b390e68441bd01"
 
-[gdscript."4.2.2-stable"]
-parent = "4.2-stable"
-need_digits_in_hex_and_binary = true
-
 [engine."4.2.2-stable"]
 parent = "4.2.1-stable"
 commit = "15073afe3856abd2aa1622492fe50026c7d63dc1"
-gdscript = "4.2.2-stable"
+gdscript.need_digits_in_hex_and_binary = true
 
-[gdscript."4.3-stable"]
+[engine."4.3-stable"]
 parent = "4.2.2-stable"
+commit = "77dcf97d82cbfe4e4615475fa52ca03da645dbd8"
+
+[engine."4.3-stable".gdscript]
 has_fixed_continuation_lines = true
 tokenizer_version = 100
 has_extra_word_in_binary_script_header = true
@@ -424,28 +414,24 @@ tokens = [
     "Eof",
 ]
 
-[engine."4.3-stable"]
-parent = "4.2.2-stable"
-commit = "77dcf97d82cbfe4e4615475fa52ca03da645dbd8"
-gdscript = "4.3-stable"
-
-[gdscript."4.4-stable"]
-parent = "4.3-stable"
-has_uppercase_number_types = true
-allow_zwsp_as_whitespace = true
-
 [engine."4.4-stable"]
 parent = "4.3-stable"
 commit = "4c311cbee68c0b66ff8ebb8b0defdd9979dd2a41"
-gdscript = "4.4-stable"
 has_prefixless_pck_paths = true
+
+[engine."4.4-stable".gdscript]
+has_uppercase_number_types = true
+allow_zwsp_as_whitespace = true
 
 [engine."4.4.1-stable"]
 parent = "4.4-stable"
 commit = "49a5bc7b616bd04689a2c89e89bda41f50241464"
 
-[gdscript."4.5-stable"]
-parent = "4.4-stable"
+[engine."4.5-stable"]
+parent = "4.4.1-stable"
+commit = "876b290332ec6f2e6d173d08162a02aa7e6ca46d"
+
+[engine."4.5-stable".gdscript]
 tokenizer_version = 101
 has_variadic_functions = true
 has_extra_word_in_binary_script_header = false
@@ -555,11 +541,6 @@ tokens = [
     "Eof",
 ]
 
-[engine."4.5-stable"]
-parent = "4.4.1-stable"
-commit = "876b290332ec6f2e6d173d08162a02aa7e6ca46d"
-gdscript = "4.5-stable"
-
 [engine."4.5.1-stable"]
 parent = "4.5-stable"
 commit = "f62fdbde15035c5576dad93e586201f4d41ef0cb"
@@ -568,14 +549,10 @@ commit = "f62fdbde15035c5576dad93e586201f4d41ef0cb"
 parent = "4.5.1-stable"
 commit = "6ce3de25aa58466e14ef354703ba8d9791a417da"
 
-[gdscript."4.6-stable"]
-parent = "4.5-stable"
-allow_preload_trailing_comma = true
-
 [engine."4.6-stable"]
 parent = "4.5.1-stable"
 commit = "f62fdbde15035c5576dad93e586201f4d41ef0cb"
-gdscript = "4.6-stable"
+gdscript.allow_preload_trailing_comma = true
 
 [engine."4.6.1-stable"]
 parent = "4.6-stable"
@@ -589,15 +566,13 @@ commit = "001aa128b1cd80dc4e47e823c360bccf45ed6bad"
 parent = "4.6.2-stable"
 commit = "35e80b3a8822a9df9be390814b62f44c0a9c69e8"
 
-[gdscript."4.7-stable"]
-parent = "4.6-stable"
-has_fixed_multiline_handling_in_super_calls = true
-expands_tabs_in_span_column = true
-
 [engine."4.7-stable"]
 parent = "4.6.3-stable"
 commit = "5b4e0cb0fd279832bbdd69fed5354d4e5ad26f88"
-gdscript = "4.7-stable"
+
+[engine."4.7-stable".gdscript]
+has_fixed_multiline_handling_in_super_calls = true
+expands_tabs_in_span_column = true
 
 [engine."4.7.1-stable"]
 parent = "4.7-stable"

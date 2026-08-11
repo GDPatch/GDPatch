@@ -1,6 +1,6 @@
 use crate::Error;
 use crate::Error::{BadData, UnknownVersion};
-use crate::build::GDScriptV2Build;
+use crate::build::GDScriptBuild;
 use crate::gdscript::tokenizer::Tokenizer;
 use crate::gdscript::{Position, Span, Spanned, Token, TokenType};
 use crate::marshalling::{ReadableMarshalBuffer, WritableMarshalBuffer};
@@ -26,7 +26,7 @@ pub const MAGIC: u32 = u32::from_le_bytes(*b"GDSC");
 #[derive(Debug, Clone)]
 pub struct TokenizerBytecode<'v> {
     /// Engine version we're parsing for.
-    version: &'v GDScriptV2Build,
+    version: &'v GDScriptBuild,
 
     token_lines: HashMap<usize, usize>,
     token_columns: HashMap<usize, usize>,
@@ -48,7 +48,7 @@ pub enum CompressMode {
 
 /// Converts a list of tokens into the representation Godot uses for compiled GDScripts.
 pub fn reconstruct_script_binary(
-    version: &GDScriptV2Build,
+    version: &GDScriptBuild,
     tokens: &[Spanned<Token>],
     compression: CompressMode,
     real_t_is_double: bool,
@@ -486,7 +486,7 @@ impl<'v> TokenizerBytecode<'v> {
         Span::new(pos, pos)
     }
 
-    pub fn new(version: &'v GDScriptV2Build, buf: &[u8]) -> crate::Result<TokenizerBytecode<'v>> {
+    pub fn new(version: &'v GDScriptBuild, buf: &[u8]) -> crate::Result<TokenizerBytecode<'v>> {
         let mut buf = ReadableMarshalBuffer::new(buf, false);
 
         if buf.decode_uint32()? != MAGIC {
@@ -686,7 +686,7 @@ impl<'v> Iterator for TokenizerBytecode<'v> {
 
 impl<'v> Sealed for TokenizerBytecode<'v> {}
 impl<'v> Tokenizer for TokenizerBytecode<'v> {
-    fn version(&self) -> &GDScriptV2Build {
+    fn version(&self) -> &GDScriptBuild {
         self.version
     }
 

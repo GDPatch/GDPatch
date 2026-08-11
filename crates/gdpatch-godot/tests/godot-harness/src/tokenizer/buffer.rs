@@ -1,7 +1,6 @@
 use crate::SharedInputs;
 use crate::godot_comms::run_script;
 use crate::tokenizer::run_tokenizer_and_compare;
-use gdpatch_godot::build::GDScriptBuild;
 use gdpatch_godot::gdscript::tokenizer::TokenizerBytecode;
 use libtest_mimic::Completion::Completed;
 use libtest_mimic::{Completion, Failed};
@@ -13,10 +12,7 @@ pub fn convert_and_run_buffer_tokenizer_test(
     shared_inputs: Arc<SharedInputs>,
     script_path: PathBuf,
 ) -> Result<Completion, Failed> {
-    let GDScriptBuild::V2(gdscript_build) = &shared_inputs.build.gdscript else {
-        unreachable!()
-    };
-
+    let gdscript_build = &shared_inputs.build.gdscript;
     if gdscript_build.tokenizer_version.is_none() {
         return Ok(Completion::ignored_with("bytecode scripts unsupported"));
     }
@@ -53,9 +49,7 @@ pub fn run_buffer_tokenizer_test(
     shared_inputs: Arc<SharedInputs>,
     script_path: PathBuf,
 ) -> Result<Completion, Failed> {
-    let GDScriptBuild::V2(gdscript_build) = &shared_inputs.build.gdscript else {
-        unreachable!()
-    };
+    let gdscript_build = &shared_inputs.build.gdscript;
     if gdscript_build.tokenizer_version.is_none() {
         return Ok(Completion::ignored_with("bytecode scripts unsupported"));
     }

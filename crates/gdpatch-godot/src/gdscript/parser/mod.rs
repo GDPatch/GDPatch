@@ -1,7 +1,7 @@
 //! Rust port of the GDScript text parser.
 //! This parser skips some behavior that the upstream parser performs, notably completion contexts and annotation validation.
 
-use crate::build::GDScriptV2Build;
+use crate::build::GDScriptBuild;
 use crate::do_while;
 use crate::gdscript::parser::node::{
     AnnotationNode, ArrayNode, ArrayPattern, AssertNode, AssignmentNode, AssignmentOperation,
@@ -195,7 +195,7 @@ impl<'tokenizer> Parser<'tokenizer> {
 }
 
 impl Parser<'_> {
-    fn version(&self) -> &GDScriptV2Build {
+    fn version(&self) -> &GDScriptBuild {
         self.tokenizer.version()
     }
 
