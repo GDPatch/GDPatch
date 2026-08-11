@@ -2,13 +2,11 @@
 
 mod builder;
 
-use crate::{
-    Error,
-    build::{EngineBuild, SerializedEngineBuild},
-};
+use crate::Error;
 use byteorder::{LittleEndian, ReadBytesExt};
 use core::str;
 use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 use std::io::{Read, Seek, SeekFrom};
 use tracing::error;
 
@@ -28,17 +26,17 @@ const PACK_FILE_DELTA: u32 = 1 << 2;
 /// build catalog system, as it uses the pack header to determine the engine version automatically. To avoid requiring
 /// the user to specify the game version directly, we store some settings about how to parse the pack file independently
 /// from the build configs, so we can parse the pack before resolving an engine version.
-#[derive(Debug, Default, Clone)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct PackConfig {
     /// The magic constant present in the header of pack files.
-    header_magic: Option<String>,
+    pck_header_magic: Option<String>,
 }
 
 impl PackConfig {
     // defaults are implemented here so we don't have to look them up in the build catalog; it's a little weird but it works
     pub fn header_magic(&self) -> u32 {
         const PACK_HEADER_MAGIC: u32 = 0x43504447; // "GDPC" in ASCII
-        self.header_magic
+        self.pck_header_magic
             .clone()
             .map(|s| {
                 let mut bytes = [0u8; 4];
@@ -46,22 +44,6 @@ impl PackConfig {
                 u32::from_le_bytes(bytes)
             })
             .unwrap_or(PACK_HEADER_MAGIC)
-    }
-}
-
-impl From<SerializedEngineBuild> for PackConfig {
-    fn from(value: SerializedEngineBuild) -> Self {
-        Self {
-            header_magic: value.pck_header_magic,
-        }
-    }
-}
-
-impl From<EngineBuild> for PackConfig {
-    fn from(value: EngineBuild) -> Self {
-        Self {
-            header_magic: value.pck_header_magic,
-        }
     }
 }
 

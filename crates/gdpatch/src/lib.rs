@@ -160,12 +160,7 @@ impl GDPatch {
         info!("This is GDPatch {}, heya!", env!("CARGO_PKG_VERSION"));
 
         // Setup file hooks.
-        let pack_config = self
-            .config
-            .engine
-            .clone()
-            .map(PackConfig::from)
-            .unwrap_or_default();
+        let pack_config = self.config.engine.pack.clone().unwrap_or_default();
         filesilly::init()?;
         filesilly::set(Box::new(GDPatchStreamFactory(pack_config.clone())));
 
@@ -312,9 +307,10 @@ impl GDPatch {
 
             let engine_build = resolve_approximate_build(
                 pack_version,
-                self.config.engine.clone(),
+                self.config.engine.engine.clone(),
                 self.config.gdscript.clone(),
-            );
+            )
+            .expect("failed to resolve engine build");
             info!(version = %engine_build.version, "using engine build");
 
             if engine_build.version.minor != old_pack.engine_version.1
@@ -667,7 +663,8 @@ impl GDPatch {
             );
         }
 
-        let virtual_pack = Arc::new(builder.build(engine_build, header_pos_within_file));
+        let pack_config = self.config.engine.pack.clone().unwrap_or_default();
+        let virtual_pack = Arc::new(builder.build(pack_config, header_pos_within_file));
         self.virtual_packs
             .write()
             .insert(path, virtual_pack.clone());

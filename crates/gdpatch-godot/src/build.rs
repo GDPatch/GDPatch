@@ -1,6 +1,6 @@
 use crate::gdscript::TokenType;
 use color_eyre::Report;
-use color_eyre::eyre::{OptionExt, bail, eyre};
+use color_eyre::eyre::{Context as _, ContextCompat, OptionExt, bail, eyre};
 use serde::de::{Error, Unexpected};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
@@ -546,9 +546,6 @@ pub struct EngineBuild {
     /// GDScript information (token order + builtin function order for GDScript 1.x)
     pub gdscript: GDScriptBuild,
 
-    /// The magic constant present in the header of pack files.
-    pub pck_header_magic: Option<String>,
-
     /// Whether paths in the pack file no longer contain the `res://` prefix or not. Official builds changed this in
     /// [`2ac562cdf8366876381902a0667fec704e357495`] (4.4).
     ///
@@ -586,6 +583,74 @@ pub enum FindApproximateBuildResult<'builds> {
 }
 
 impl EngineBuilds {
+    /// Resolves parent versions into flat builds, using the existing builds as a base.
+    pub fn resolve(
+        self,
+        serialized_builds: &mut SerializedEngineBuilds,
+    ) -> crate::Result<EngineBuilds, Report> {
+        // already resolved entries
+        let mut resolved = BTreeMap::new();
+        for (version, build) in &self.0 {
+            resolved.insert(version.clone(), build.clone());
+        }
+
+        // stack of entries that are waiting to resolve due to their parents not being resolved yet
+        let mut current_stack = Vec::new();
+
+        fn resolve<'a>(
+            serialized_builds: &mut HashMap<VersionSpecifier, SerializedEngineBuild>,
+            resolved_builds: &'a mut BTreeMap<VersionSpecifier, EngineBuild>,
+            current_stack: &mut Vec<VersionSpecifier>,
+            version: VersionSpecifier,
+        ) -> crate::Result<&'a EngineBuild, Report> {
+            current_stack.push(version.clone());
+
+            // check if already resolved
+            if resolved_builds.contains_key(&version) {
+                return Ok(&resolved_builds[&version]);
+            }
+
+            // remove build from builds list
+            let serialized_build = serialized_builds
+                .remove(&version)
+                .ok_or_else(|| eyre!("unknown build {} in parent dependencies", &version))?;
+
+            // resolve parent first
+            let parent = match &serialized_build.parent {
+                None => None,
+                Some(parent_version) => Some(resolve(
+                    serialized_builds,
+                    resolved_builds,
+                    current_stack,
+                    parent_version.clone(),
+                )?),
+            };
+
+            let build = serialized_build.resolve(version.clone(), parent)?;
+
+            let btree_map::Entry::Vacant(entry) = resolved_builds.entry(version.clone()) else {
+                unreachable!()
+            };
+
+            let build_ref = entry.insert(build);
+            current_stack.pop();
+
+            Ok(&*build_ref)
+        }
+
+        // remove random entry from builds and resolve it
+        while let Some(version) = serialized_builds.0.keys().next().cloned() {
+            resolve(
+                &mut serialized_builds.0,
+                &mut resolved,
+                &mut current_stack,
+                version,
+            )?;
+        }
+
+        Ok(EngineBuilds(resolved))
+    }
+
     /// Finds a build that approximately matches a version specifier.
     ///
     /// Builds are matched by the major version and flavor first (both must be equal to the
@@ -764,10 +829,6 @@ pub struct SerializedEngineBuild {
     #[serde(default)]
     pub gdscript: Option<SerializedGDScriptBuild>,
 
-    /// The magic constant present in the header of pack files.
-    #[serde(default)]
-    pub pck_header_magic: Option<String>,
-
     /// Whether paths in the pack file no longer contain the `res://` prefix or not. Official builds changed this in
     /// [`2ac562cdf8366876381902a0667fec704e357495`] (4.4).
     ///
@@ -795,9 +856,6 @@ impl SerializedEngineBuild {
             commit: self.commit,
             gdscript,
 
-            pck_header_magic: self
-                .pck_header_magic
-                .or(parent.and_then(|p| p.pck_header_magic.clone())),
             has_prefixless_pck_paths: self
                 .has_prefixless_pck_paths
                 .or(parent.map(|p| p.has_prefixless_pck_paths))
@@ -808,7 +866,7 @@ impl SerializedEngineBuild {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct SerializedEngineBuilds(pub HashMap<VersionSpecifier, SerializedEngineBuild>);
 
 impl SerializedEngineBuilds {
@@ -882,12 +940,18 @@ impl SerializedBuildsFile {
     }
 }
 
-static BUNDLED_BUILDS: LazyLock<SerializedBuildsFile> = LazyLock::new(|| {
+static BUNDLED_BUILDS: LazyLock<EngineBuilds> = LazyLock::new(|| {
     static BUILDS_TEXT: &str = include_str!("../builds.toml");
-    toml::from_str::<SerializedBuildsFile>(BUILDS_TEXT).expect("bundled builds.toml is invalid")
+
+    let unresolved = toml::from_str::<SerializedBuildsFile>(BUILDS_TEXT)
+        .expect("bundled builds.toml is invalid");
+
+    unresolved
+        .resolve()
+        .expect("bundled builds.toml is invalid")
 });
 
-pub fn bundled_builds() -> &'static SerializedBuildsFile {
+pub fn bundled_builds() -> &'static EngineBuilds {
     &BUNDLED_BUILDS
 }
 
@@ -895,21 +959,15 @@ pub fn resolve_approximate_build(
     pack_version: VersionSpecifier,
     custom_engine: Option<SerializedEngineBuild>,
     custom_gdscript: Option<SerializedGDScriptBuild>,
-) -> EngineBuild {
+) -> color_eyre::Result<EngineBuild> {
     const CUSTOM_BUILD_FLAVOR: &str = "custom"; // TODO: should we change this?
 
     // Resolve the pack version ahead of time, so we know what to use as a parent.
-    let pack_engine_build = {
-        let builds = bundled_builds()
-            .clone()
-            .resolve()
-            .expect("failed to resolve custom engine builds");
-
-        builds
-            .find_approximate_build(&pack_version)
-            .expect("failed to resolve pack engine build")
-            .clone()
-    };
+    let bundled_builds = bundled_builds().clone();
+    let pack_engine_build = bundled_builds
+        .find_approximate_build(&pack_version)
+        .context("failed to resolve pack engine build")?
+        .clone();
 
     let custom_version = if let Some(parent) = custom_engine.as_ref().and_then(|p| p.parent.clone())
     {
@@ -943,44 +1001,28 @@ pub fn resolve_approximate_build(
     };
 
     if let Some((version, parent)) = custom_version {
-        // GDScript builds are identified by a string, in which case we can reuse the engine version.
-        //let gdscript_version = version.to_string();
-
         // Add our custom engine build.
         let mut custom_engine = custom_engine.unwrap_or_default();
 
-        // Set the parent engine/GDScript version if it wasn't set by the user.
+        // Set the parent engine version if it wasn't set by the user.
         if custom_engine.parent.is_none() {
             custom_engine.parent = Some(parent);
         }
-        /*if custom_gdscript.is_some() && custom_engine.gdscript.is_none() {
-            custom_engine.gdscript = Some(gdscript_version.clone());
-        }*/
 
         // Add them to the build catalog and resolve our custom version.
-        let mut custom_builds = bundled_builds().clone();
+        let mut serialized_builds = SerializedEngineBuilds::default();
+        serialized_builds.0.insert(version.clone(), custom_engine);
+
+        let custom_builds = bundled_builds
+            .resolve(&mut serialized_builds)
+            .wrap_err("failed to resolve custom engine builds")?;
 
         custom_builds
-            .engine
-            .0
-            .insert(version.clone(), custom_engine);
-        /*if let Some(custom_gdscript) = custom_gdscript {
-            custom_builds
-                .gdscript
-                .0
-                .insert(gdscript_version, custom_gdscript);
-        }*/
-
-        let builds = custom_builds
-            .resolve()
-            .expect("failed to resolve custom engine builds");
-
-        builds
             .find_exact_build(&version)
-            .expect("failed to resolve custom engine build")
-            .clone()
+            .wrap_err("failed to resolve custom engine build")
+            .cloned()
     } else {
         // No custom version to worry about, just return the pack engine build.
-        pack_engine_build
+        Ok(pack_engine_build)
     }
 }

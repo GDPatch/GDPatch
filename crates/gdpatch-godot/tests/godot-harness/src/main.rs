@@ -61,8 +61,7 @@ fn determine_godot_build(godot_binary: &Path) -> color_eyre::Result<EngineBuild>
     let version = try_parse_version_string(&version_string)
         .ok_or_else(|| eyre!("failed to parse version string {version_string}"))?;
 
-    let builds = bundled_builds().clone().resolve().unwrap();
-    let build = builds
+    let build = bundled_builds()
         .find_approximate_build(&version)
         .ok_or_else(|| eyre!("failed to find build for {version}"))?;
 

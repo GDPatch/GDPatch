@@ -1507,7 +1507,7 @@ mod tests {
 
     #[test]
     fn test_newline_jank() {
-        let builds = bundled_builds().clone().resolve().unwrap();
+        let builds = bundled_builds().clone();
         let build = builds
             .find_exact_build(&VersionSpecifier::from_str("4.5-stable").unwrap())
             .unwrap();
