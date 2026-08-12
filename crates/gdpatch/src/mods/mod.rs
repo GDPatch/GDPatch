@@ -145,6 +145,9 @@ impl ModPack {
 /// A loaded mod.
 #[derive(Debug)]
 pub struct Mod {
+    /// The directory where the mod is stored.
+    pub root_directory: Option<PathBuf>,
+
     /// Static info on the mod (ID, metadata, etc.).
     pub info: ModInfo,
 
@@ -227,6 +230,7 @@ impl Mods {
         let config = ModConfig::new(config_path, mod_info.config.clone().unwrap_or_default());
 
         Ok(Mod {
+            root_directory: fs.root(),
             info: mod_info,
             patcher,
             pack,

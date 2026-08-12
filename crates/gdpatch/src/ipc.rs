@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
     io::{Cursor, Read, Seek, Write},
+    path::PathBuf,
 };
 
 pub const IPC_FILENAME: &str = "gdpatch-ipc";
@@ -22,6 +23,10 @@ pub struct Sequenced<T> {
 #[serde(tag = "type")]
 pub enum IpcCommand {
     GetModList,
+    GetRootDirectory,
+    GetModDirectory {
+        mod_id: String,
+    },
     GetConfigOption {
         mod_id: String,
         section: String,
@@ -39,6 +44,8 @@ pub enum IpcCommand {
 #[serde(tag = "type")]
 pub enum IpcResponse {
     ModList { value: Vec<ModInfo> },
+    RootDirectory { value: PathBuf },
+    ModDirectory { value: Option<PathBuf> },
     ConfigOption { value: Option<toml::Value> },
 }
 
@@ -68,6 +75,26 @@ impl IpcStream {
                 let mods = mods.as_ref().expect("mods should be initialized");
                 let mod_infos = mods.0.values().map(|m| m.info.clone()).collect();
                 self.submit_response(seq, IpcResponse::ModList { value: mod_infos })?;
+            }
+            IpcCommand::GetRootDirectory => {
+                let gdpatch = GDPatch::instance();
+                let root_directory = gdpatch.get_root_directory();
+                self.submit_response(
+                    seq,
+                    IpcResponse::RootDirectory {
+                        value: root_directory,
+                    },
+                )?;
+            }
+            IpcCommand::GetModDirectory { mod_id } => {
+                let gdpatch = GDPatch::instance();
+                let mod_directory = gdpatch.get_mod_directory(&mod_id);
+                self.submit_response(
+                    seq,
+                    IpcResponse::ModDirectory {
+                        value: mod_directory,
+                    },
+                )?;
             }
             IpcCommand::GetConfigOption {
                 mod_id,

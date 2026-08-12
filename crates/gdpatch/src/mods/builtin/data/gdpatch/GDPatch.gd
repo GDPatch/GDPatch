@@ -7,15 +7,21 @@ var mutex: Mutex
 var file: FileAccess
 var seq = 0
 var mods: Array = []
+var root_directory: String = ""
 
 func _init() -> void:
   self.mutex = Mutex.new()
   self.file = FileAccess.open("gdpatch-ipc", FileAccess.READ_WRITE)
 
-  var resp = self._send_command_with_response({
+  var mod_list = self._send_command_with_response({
     "type": "GetModList"
   })
-  self.mods.assign(resp.value)
+  self.mods.assign(mod_list.value)
+
+  var root_directory = self._send_command_with_response({
+    "type": "GetRootDirectory"
+  })
+  self.root_directory = root_directory.value
 
 func _ready() -> void:
   for mod in self.mods:
@@ -103,6 +109,16 @@ func get_mod(mod_id: String) -> Node:
 
 func get_mods() -> Array:
   return self.mods
+
+func get_root_directory() -> String:
+  return self.root_directory
+
+func get_mod_directory(mod_id: String):
+  var resp = self._send_command_with_response({
+    "type": "GetModDirectory",
+    "mod_id": mod_id
+  })
+  return resp["value"]
 
 func get_config_option(mod_id: String, section: String, option: String):
   var resp = self._send_command_with_response({

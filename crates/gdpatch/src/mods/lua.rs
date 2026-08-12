@@ -365,6 +365,24 @@ impl UserData for GDPatchLuaGlobal {
     where
         M: UserDataMethods<Self>,
     {
+        methods.add_function("get_root_directory", |_, (): ()| {
+            let gdpatch = GDPatch::instance();
+            Ok(gdpatch.get_root_directory())
+        });
+
+        methods.add_function("get_mod_directory", |lua, mod_id: Option<String>| {
+            let mod_id = mod_id.unwrap_or_else(|| {
+                let state = lua
+                    .app_data_ref::<ModLuaState>()
+                    .expect("runtime state should be available");
+
+                state.mod_id.clone()
+            });
+
+            let gdpatch = GDPatch::instance();
+            Ok(gdpatch.get_mod_directory(&mod_id))
+        });
+
         methods.add_function(
             "get_config_option",
             |lua, (mod_id, section, option): (Option<String>, String, String)| {

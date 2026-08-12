@@ -60,6 +60,20 @@ impl GDPatch {
         }
     }
 
+    /// Returns the root directory used by GDPatch (usually next to the game install).
+    pub fn get_root_directory(&self) -> PathBuf {
+        self.root_directory.clone()
+    }
+
+    /// Returns the directory of a given mod ID if it exists.
+    pub fn get_mod_directory(&self, mod_id: &str) -> Option<PathBuf> {
+        let mods = self.mods.read();
+        let mods = mods.as_ref()?;
+        let r#mod = mods.0.get(mod_id)?;
+        r#mod.root_directory.clone()
+    }
+
+    /// Gets a config option for a given mod ID and section/option pair.
     pub fn get_config_option(
         &self,
         mod_id: &str,
@@ -79,6 +93,7 @@ impl GDPatch {
         }
     }
 
+    /// Sets a config option for a given mod ID and section/option pair.
     pub fn set_config_option(
         &self,
         mod_id: &str,

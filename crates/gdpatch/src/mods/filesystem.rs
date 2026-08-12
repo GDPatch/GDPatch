@@ -11,6 +11,9 @@ use std::{
 /// Filesystem operations for loading mods.
 /// This is abstracted so mods can be loaded from in-memory.
 pub trait ModLoaderFs {
+    /// Return the root directory on disk if it exists.
+    fn root(&self) -> Option<PathBuf>;
+
     /// Check if a path exists.
     fn exists(&self, path: &Path) -> color_eyre::Result<bool>;
 
@@ -36,6 +39,10 @@ impl ModLoaderFolderFs {
 }
 
 impl ModLoaderFs for ModLoaderFolderFs {
+    fn root(&self) -> Option<PathBuf> {
+        Some(self.root.clone())
+    }
+
     fn exists(&self, path: &Path) -> color_eyre::Result<bool> {
         Ok(self.root.join(path).exists())
     }
@@ -90,6 +97,10 @@ impl ModLoaderMapFs {
 }
 
 impl ModLoaderFs for ModLoaderMapFs {
+    fn root(&self) -> Option<PathBuf> {
+        None
+    }
+
     fn exists(&self, path: &Path) -> color_eyre::Result<bool> {
         let key = path
             .to_str()
