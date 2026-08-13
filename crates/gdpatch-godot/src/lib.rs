@@ -5,6 +5,7 @@ extern crate core;
 use thiserror::Error;
 
 pub mod build;
+pub mod config_file;
 pub mod gdscript;
 mod marshalling;
 pub mod pack;
@@ -33,6 +34,9 @@ pub enum Error {
 
     #[error("unsupported/unknown version {}", .0)]
     UnknownVersion(u32),
+
+    #[error("failed to parse")]
+    Parse(String),
 
     #[error("an i/o error occurred: {}", .0)]
     Io(#[from] std::io::Error),

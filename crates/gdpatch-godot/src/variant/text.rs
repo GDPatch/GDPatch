@@ -1,11 +1,13 @@
-use base64::Engine;
-
 use crate::string::{to_float, to_int};
+use crate::util::{escape_string, escape_string_multiline};
 use crate::variant::{
-    Aabb, Array, Basis, Callable, Color, ContainerType, Dictionary, Nil, NodePath, Object, Plane,
-    Projection, Quaternion, Rect2, Rect2i, Rid, Signal, StringName, Transform2d, Transform3d,
-    Variant, VariantType, Vector2, Vector2i, Vector3, Vector3i, Vector4, Vector4i,
+    Aabb, Array, Basis, Callable, Color, ContainerType, Dictionary, Nil, NodePath, Object,
+    ObjectKind, Plane, Projection, Quaternion, Rect2, Rect2i, Rid, Signal, StringName, Transform2d,
+    Transform3d, Variant, VariantType, Vector2, Vector2i, Vector3, Vector3i, Vector4, Vector4i,
 };
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
+use std::collections::HashMap;
 use std::str::{Chars, FromStr};
 
 #[derive(Debug)]
@@ -59,8 +61,26 @@ impl Token {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct Tag {
+    pub name: String,
+    pub fields: HashMap<String, Variant>,
+}
+
+#[derive(Debug, Clone)]
+pub enum TagAssign {
+    Tag(Tag),
+    Variant { assign: String, value: Variant },
+}
+
 #[derive(Debug)]
 pub struct ParseError(String);
+
+impl From<ParseError> for crate::Error {
+    fn from(value: ParseError) -> Self {
+        Self::Parse(value.0)
+    }
+}
 
 pub type ParseResult<T, E = ParseError> = Result<T, E>;
 
@@ -71,6 +91,27 @@ fn stor_fix(s: &str) -> Option<f64> {
         "nan" => f64::NAN,
         _ => return None,
     })
+}
+
+fn rtos_fix(value: f64, compat: bool) -> String {
+    if value == 0.0 {
+        "0".to_string() // Avoid negative zero (-0) being written, which may annoy git, svn, etc. for changes when they don't exist.    } else if compat {
+    } else if compat && value.is_infinite() && value < 0.0 {
+        "inf_neg".to_string()
+    } else {
+        if value.is_nan() {
+            "nan".to_string()
+        } else if value.is_infinite() {
+            if value.is_sign_negative() {
+                "-inf".to_string()
+            } else {
+                "inf".to_string()
+            }
+        } else {
+            let mut buffer = zmij::Buffer::new();
+            buffer.format(value).to_string()
+        }
+    }
 }
 
 impl<'a> VariantParser<'a> {
@@ -437,8 +478,7 @@ impl<'a> VariantParser<'a> {
             Some(Token::String(str)) => {
                 // Base64 encoded array.
 
-                // I hate this library so much man -jules
-                let data = base64::engine::general_purpose::STANDARD
+                let data = STANDARD
                     .decode(str)
                     .map_err(|_| ParseError("Invalid base64-encoded string".into()))?;
 
@@ -1161,4 +1201,618 @@ impl<'a> VariantParser<'a> {
 
         self.parse_value(token)
     }
+
+    fn parse_tag(&mut self, simple_tag: bool) -> ParseResult<Tag> {
+        let token = self.get_token().ok();
+
+        if matches!(token, Some(Token::Eof)) {
+            return Err(ParseError("Expected token, got EOF".into()));
+        }
+
+        if !matches!(token, Some(Token::BracketOpen)) {
+            return Err(ParseError("Expected '['".into()));
+        }
+
+        let mut tag = Tag::default();
+        if simple_tag {
+            let mut name = String::new();
+            let mut escaping = false;
+
+            loop {
+                let Some(ch) = self.get_char() else {
+                    return Err(ParseError("Unexpected EOF while parsing simple tag".into()));
+                };
+
+                if ch == ']' {
+                    if escaping {
+                        escaping = false;
+                    } else {
+                        break;
+                    }
+                } else {
+                    escaping = ch == '\\';
+                }
+
+                name.push(ch);
+            }
+
+            tag.name = name.trim().to_string();
+            return Ok(tag);
+        }
+
+        let Ok(Token::Identifier(name)) = self.get_token() else {
+            return Err(ParseError("Expected identifier (tag name)".into()));
+        };
+        tag.name = name;
+
+        let mut parsing_tag = true;
+        loop {
+            let mut token = self.get_token().ok();
+            if matches!(token, Some(Token::Eof)) {
+                return Err(ParseError(format!(
+                    "Unexpected EOF while parsing tag '{}'",
+                    tag.name
+                )));
+            }
+
+            if matches!(token, Some(Token::BracketClose)) {
+                break;
+            }
+
+            if parsing_tag && matches!(token, Some(Token::Period)) {
+                tag.name.push('.'); // support tags such as [someprop.Android] for specific platforms
+                token = self.get_token().ok();
+            } else if parsing_tag && matches!(token, Some(Token::Colon)) {
+                tag.name.push(':'); // support tags such as [someprop.Android] for specific platforms
+
+                token = self.get_token().ok();
+            } else {
+                parsing_tag = false;
+            }
+
+            let Some(Token::Identifier(id)) = token else {
+                return Err(ParseError("Expected identifier".into()));
+            };
+
+            if parsing_tag {
+                tag.name.push_str(&id);
+                continue;
+            }
+
+            let token = self.get_token().ok();
+            if !matches!(token, Some(Token::Equal)) {
+                return Err(ParseError("Expected '=' after identifier".into()));
+            }
+
+            let token = self.get_token()?;
+            let value = self.parse_value(token)?;
+            tag.fields.insert(id, value);
+        }
+
+        Ok(tag)
+    }
+
+    pub fn parse_tag_assign_eof(&mut self, simple_tag: bool) -> ParseResult<Option<TagAssign>> {
+        let mut what = String::new();
+
+        loop {
+            let Some(ch) = self.get_char() else {
+                return Ok(None);
+            };
+
+            if ch == ';' {
+                // comment
+                loop {
+                    let Some(ch) = self.get_char() else {
+                        return Ok(None);
+                    };
+
+                    if ch == '\n' {
+                        self.line += 1;
+                        break;
+                    }
+                }
+
+                continue;
+            }
+
+            if ch == '[' && what.is_empty() {
+                // it's a tag!
+                self.saved_char = Some(Some('['));
+
+                let tag = self.parse_tag(simple_tag)?;
+                return Ok(Some(TagAssign::Tag(tag)));
+            }
+
+            if (ch as u32) > 32 {
+                if ch == '"' {
+                    // quoted
+                    self.saved_char = Some(Some('"'));
+
+                    let Token::String(value) = self.get_token()? else {
+                        return Err(ParseError("Error reading quoted string".into()));
+                    };
+
+                    what = value;
+                } else if ch != '=' {
+                    what.push(ch);
+                } else {
+                    let token = self.get_token()?;
+                    let value = self.parse_value(token)?;
+                    return Ok(Some(TagAssign::Variant {
+                        assign: what,
+                        value,
+                    }));
+                }
+            } else if ch == '\n' {
+                self.line += 1;
+            }
+        }
+    }
+}
+
+pub fn write_variant(variant: &Variant, compat: bool) -> String {
+    let mut str = String::new();
+
+    match variant {
+        Variant::Nil(_) => str.push_str("null"),
+        Variant::Bool(value) => str.push_str(if *value { "true" } else { "false" }),
+        Variant::Int(value) => str.push_str(&value.to_string()),
+        Variant::Float(value) => {
+            let mut s = rtos_fix((*value).into(), compat);
+
+            // Append ".0" to floats to ensure they are float literals.
+            if s != "inf"
+                && s != "-inf"
+                && s != "nan"
+                && !s.contains('.')
+                && !s.contains('e')
+                && !s.contains('E')
+            {
+                s += ".0";
+            }
+
+            str.push_str(&s);
+        }
+        Variant::String(value) => {
+            str.push_str(&format!("\"{}\"", escape_string_multiline(value)));
+        }
+
+        Variant::Vector2(value) => {
+            str.push_str(&format!(
+                "Vector2({}, {})",
+                rtos_fix(value.x.into(), compat),
+                rtos_fix(value.y.into(), compat),
+            ));
+        }
+        Variant::Vector2i(value) => {
+            str.push_str(&format!(
+                "Vector2i({}, {})",
+                rtos_fix(value.x.into(), compat),
+                rtos_fix(value.y.into(), compat),
+            ));
+        }
+        Variant::Rect2(value) => {
+            str.push_str(&format!(
+                "Rect2({}, {}, {}, {})",
+                rtos_fix(value.position.x.into(), compat),
+                rtos_fix(value.position.y.into(), compat),
+                rtos_fix(value.size.x.into(), compat),
+                rtos_fix(value.size.y.into(), compat),
+            ));
+        }
+        Variant::Rect2i(value) => {
+            str.push_str(&format!(
+                "Rect2i({}, {}, {}, {})",
+                rtos_fix(value.position.x.into(), compat),
+                rtos_fix(value.position.y.into(), compat),
+                rtos_fix(value.size.x.into(), compat),
+                rtos_fix(value.size.y.into(), compat),
+            ));
+        }
+        Variant::Vector3(value) => {
+            str.push_str(&format!(
+                "Vector3({}, {}, {})",
+                rtos_fix(value.x.into(), compat),
+                rtos_fix(value.y.into(), compat),
+                rtos_fix(value.z.into(), compat),
+            ));
+        }
+        Variant::Vector3i(value) => {
+            str.push_str(&format!(
+                "Vector3i({}, {}, {})",
+                rtos_fix(value.x.into(), compat),
+                rtos_fix(value.y.into(), compat),
+                rtos_fix(value.z.into(), compat),
+            ));
+        }
+        Variant::Vector4(value) => {
+            str.push_str(&format!(
+                "Vector4({}, {}, {}, {})",
+                rtos_fix(value.x.into(), compat),
+                rtos_fix(value.y.into(), compat),
+                rtos_fix(value.z.into(), compat),
+                rtos_fix(value.w.into(), compat),
+            ));
+        }
+        Variant::Vector4i(value) => {
+            str.push_str(&format!(
+                "Vector4i({}, {}, {}, {})",
+                rtos_fix(value.x.into(), compat),
+                rtos_fix(value.y.into(), compat),
+                rtos_fix(value.z.into(), compat),
+                rtos_fix(value.w.into(), compat),
+            ));
+        }
+        Variant::Plane(value) => {
+            str.push_str(&format!(
+                "Plane({}, {}, {}, {})",
+                rtos_fix(value.normal.x.into(), compat),
+                rtos_fix(value.normal.y.into(), compat),
+                rtos_fix(value.normal.z.into(), compat),
+                rtos_fix(value.d.into(), compat),
+            ));
+        }
+        Variant::Aabb(value) => {
+            str.push_str(&format!(
+                "AABB({}, {}, {}, {}, {}, {})",
+                rtos_fix(value.position.x.into(), compat),
+                rtos_fix(value.position.y.into(), compat),
+                rtos_fix(value.position.z.into(), compat),
+                rtos_fix(value.size.x.into(), compat),
+                rtos_fix(value.size.y.into(), compat),
+                rtos_fix(value.size.z.into(), compat),
+            ));
+        }
+        Variant::Quaternion(value) => {
+            str.push_str(&format!(
+                "Quaternion({}, {}, {}, {})",
+                rtos_fix(value.x.into(), compat),
+                rtos_fix(value.y.into(), compat),
+                rtos_fix(value.z.into(), compat),
+                rtos_fix(value.w.into(), compat),
+            ));
+        }
+        Variant::Transform2d(value) => {
+            str.push_str(&format!(
+                "Transform2D({}, {}, {}, {}, {}, {})",
+                rtos_fix(value.x.x.into(), compat),
+                rtos_fix(value.x.y.into(), compat),
+                rtos_fix(value.y.x.into(), compat),
+                rtos_fix(value.y.y.into(), compat),
+                rtos_fix(value.origin.x.into(), compat),
+                rtos_fix(value.origin.y.into(), compat),
+            ));
+        }
+        Variant::Basis(value) => {
+            str.push_str(&format!(
+                "Basis({}, {}, {}, {}, {}, {}, {}, {}, {})",
+                rtos_fix(value.x.x.into(), compat),
+                rtos_fix(value.x.y.into(), compat),
+                rtos_fix(value.x.z.into(), compat),
+                rtos_fix(value.y.x.into(), compat),
+                rtos_fix(value.y.y.into(), compat),
+                rtos_fix(value.y.z.into(), compat),
+                rtos_fix(value.z.x.into(), compat),
+                rtos_fix(value.z.y.into(), compat),
+                rtos_fix(value.z.z.into(), compat),
+            ));
+        }
+        Variant::Transform3d(value) => {
+            str.push_str(&format!(
+                "Transform3D({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+                rtos_fix(value.basis.x.x.into(), compat),
+                rtos_fix(value.basis.x.y.into(), compat),
+                rtos_fix(value.basis.x.z.into(), compat),
+                rtos_fix(value.basis.y.x.into(), compat),
+                rtos_fix(value.basis.y.y.into(), compat),
+                rtos_fix(value.basis.y.z.into(), compat),
+                rtos_fix(value.basis.z.x.into(), compat),
+                rtos_fix(value.basis.z.y.into(), compat),
+                rtos_fix(value.basis.z.z.into(), compat),
+                rtos_fix(value.origin.x.into(), compat),
+                rtos_fix(value.origin.y.into(), compat),
+                rtos_fix(value.origin.z.into(), compat),
+            ));
+        }
+        Variant::Projection(value) => {
+            str.push_str(&format!(
+                "Projection({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+                rtos_fix(value.x.x.into(), compat),
+                rtos_fix(value.x.y.into(), compat),
+                rtos_fix(value.x.z.into(), compat),
+                rtos_fix(value.x.w.into(), compat),
+                rtos_fix(value.y.x.into(), compat),
+                rtos_fix(value.y.y.into(), compat),
+                rtos_fix(value.y.z.into(), compat),
+                rtos_fix(value.y.w.into(), compat),
+                rtos_fix(value.z.x.into(), compat),
+                rtos_fix(value.z.y.into(), compat),
+                rtos_fix(value.z.z.into(), compat),
+                rtos_fix(value.z.w.into(), compat),
+                rtos_fix(value.w.x.into(), compat),
+                rtos_fix(value.w.y.into(), compat),
+                rtos_fix(value.w.z.into(), compat),
+                rtos_fix(value.w.w.into(), compat),
+            ));
+        }
+
+        Variant::Color(value) => {
+            str.push_str(&format!(
+                "Color({}, {}, {}, {})",
+                rtos_fix(value.r.0.into(), compat),
+                rtos_fix(value.g.0.into(), compat),
+                rtos_fix(value.b.0.into(), compat),
+                rtos_fix(value.a.0.into(), compat),
+            ));
+        }
+        Variant::StringName(value) => {
+            str.push_str(&format!("&\"{}\"", escape_string(&value.0)));
+        }
+        Variant::NodePath(value) => {
+            str.push_str(&format!("^\"{}\"", escape_string(&value.to_string())));
+        }
+        Variant::Rid(value) => {
+            if value.0 == 0 {
+                str.push_str("RID()");
+            } else {
+                str.push_str(&format!("RID({})", value.0));
+            }
+        }
+
+        Variant::Signal(_) => {
+            str.push_str("Signal()");
+        }
+        Variant::Callable(_) => {
+            str.push_str("Callable()");
+        }
+
+        Variant::Object(value) => {
+            let obj = match value {
+                ObjectKind::Object(obj) => obj,
+                _ => unreachable!(),
+            };
+
+            str.push_str(&format!("Object({},", obj.class));
+
+            let mut first = true;
+            for (key, value) in &obj.properties {
+                if first {
+                    first = false;
+                } else {
+                    str.push('.');
+                }
+
+                str.push_str(&format!("\"{}\"", key));
+                str.push_str(&write_variant(value, compat));
+            }
+
+            str.push_str(")\n");
+        }
+        Variant::Dictionary(dict) => {
+            let is_typed =
+                dict.key_type != ContainerType::None || dict.value_type != ContainerType::None;
+
+            if is_typed {
+                str.push_str("Dictionary[");
+
+                match &dict.key_type {
+                    ContainerType::ClassName(class_name) => str.push_str(class_name),
+                    ContainerType::Script(script) => str.push_str(script),
+                    ContainerType::Builtin(variant) => {
+                        if *variant == VariantType::Nil {
+                            str.push_str("Variant");
+                        } else {
+                            str.push_str(variant.name());
+                        }
+                    }
+                    ContainerType::None => unreachable!(),
+                }
+
+                str.push_str(", ");
+
+                match &dict.value_type {
+                    ContainerType::ClassName(class_name) => str.push_str(class_name),
+                    ContainerType::Script(script) => str.push_str(script),
+                    ContainerType::Builtin(variant) => {
+                        if *variant == VariantType::Nil {
+                            str.push_str("Variant");
+                        } else {
+                            str.push_str(variant.name());
+                        }
+                    }
+                    ContainerType::None => unreachable!(),
+                }
+
+                str.push_str("](");
+            }
+
+            if dict.inner.is_empty() {
+                // Avoid unnecessary line break.
+                str.push_str("{}");
+            } else {
+                str.push_str("{\n");
+
+                for (i, (key, value)) in dict.inner.iter().enumerate() {
+                    str.push_str(&write_variant(key, compat));
+                    str.push_str(": ");
+                    str.push_str(&write_variant(value, compat));
+
+                    if i + 1 < dict.inner.len() {
+                        str.push_str(",\n");
+                    } else {
+                        str.push('\n');
+                    }
+                }
+
+                str.push('}');
+            }
+
+            if is_typed {
+                str.push(')');
+            }
+        }
+        Variant::Array(array) => {
+            let is_typed = array.element_type != ContainerType::None;
+            if is_typed {
+                str.push_str("Array[");
+
+                match &array.element_type {
+                    ContainerType::ClassName(class_name) => str.push_str(class_name),
+                    ContainerType::Script(script) => str.push_str(script),
+                    ContainerType::Builtin(variant) => str.push_str(variant.name()),
+                    ContainerType::None => unreachable!(),
+                }
+
+                str.push_str("](");
+            }
+
+            str.push('[');
+
+            let mut first = true;
+            for value in &array.inner {
+                if first {
+                    first = false;
+                } else {
+                    str.push_str(", ");
+                }
+
+                str.push_str(&write_variant(value, compat));
+            }
+
+            str.push(']');
+
+            if is_typed {
+                str.push(')');
+            }
+        }
+
+        Variant::PackedByteArray(value) => {
+            str.push_str(&format!(
+                "PackedByteArray({})",
+                if compat {
+                    value
+                        .iter()
+                        .map(|c| c.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                } else {
+                    format!("\"{}\"", STANDARD.encode(value))
+                }
+            ));
+        }
+        Variant::PackedInt32Array(value) => {
+            str.push_str(&format!(
+                "PackedInt32Array({})",
+                value
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        Variant::PackedInt64Array(value) => {
+            str.push_str(&format!(
+                "PackedInt64Array({})",
+                value
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        Variant::PackedFloat32Array(value) => {
+            str.push_str(&format!(
+                "PackedFloat32Array({})",
+                value
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        Variant::PackedFloat64Array(value) => {
+            str.push_str(&format!(
+                "PackedFloat64Array({})",
+                value
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        Variant::PackedStringArray(value) => {
+            str.push_str(&format!(
+                "PackedStringArray({})",
+                value
+                    .iter()
+                    .map(|c| format!("\"{}\"", escape_string(c)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        Variant::PackedVector2Array(value) => {
+            str.push_str(&format!(
+                "PackedVector2Array({})",
+                value
+                    .iter()
+                    .map(|c| format!(
+                        "{}, {}",
+                        rtos_fix(c.x.into(), compat),
+                        rtos_fix(c.y.into(), compat)
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        Variant::PackedVector3Array(value) => {
+            str.push_str(&format!(
+                "PackedVector3Array({})",
+                value
+                    .iter()
+                    .map(|c| format!(
+                        "{}, {}, {}",
+                        rtos_fix(c.x.into(), compat),
+                        rtos_fix(c.y.into(), compat),
+                        rtos_fix(c.z.into(), compat)
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        Variant::PackedColorArray(value) => {
+            str.push_str(&format!(
+                "PackedColorArray({})",
+                value
+                    .iter()
+                    .map(|c| format!(
+                        "{}, {}, {}, {}",
+                        rtos_fix(c.r.0.into(), compat),
+                        rtos_fix(c.g.0.into(), compat),
+                        rtos_fix(c.b.0.into(), compat),
+                        rtos_fix(c.a.0.into(), compat)
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        Variant::PackedVector4Array(value) => {
+            str.push_str(&format!(
+                "PackedVector4Array({})",
+                value
+                    .iter()
+                    .map(|c| format!(
+                        "{}, {}, {}, {}",
+                        rtos_fix(c.x.into(), compat),
+                        rtos_fix(c.y.into(), compat),
+                        rtos_fix(c.z.into(), compat),
+                        rtos_fix(c.w.into(), compat)
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+    }
+
+    str
 }

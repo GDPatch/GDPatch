@@ -9,7 +9,7 @@ mod object;
 mod rid;
 mod signal;
 mod string_name;
-mod text_parser;
+mod text;
 
 pub use crate::variant::array::Array;
 pub use crate::variant::dictionary::Dictionary;
@@ -22,6 +22,9 @@ pub use crate::variant::object::{Object, ObjectKind};
 pub use crate::variant::rid::Rid;
 pub use crate::variant::signal::Signal;
 pub use crate::variant::string_name::StringName;
+pub use crate::variant::text::{
+    ParseError, ParseResult, Tag, TagAssign, VariantParser, write_variant,
+};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -117,6 +120,52 @@ pub enum VariantType {
     PackedVector3Array,
     PackedColorArray,
     PackedVector4Array,
+}
+
+impl VariantType {
+    pub fn name(&self) -> &str {
+        match self {
+            VariantType::Nil => "Nil",
+            VariantType::Bool => "bool",
+            VariantType::Int => "int",
+            VariantType::Float => "float",
+            VariantType::String => "String",
+            VariantType::Vector2 => "Vector2",
+            VariantType::Vector2i => "Vector2i",
+            VariantType::Rect2 => "Rect2",
+            VariantType::Rect2i => "Rect2i",
+            VariantType::Vector3 => "Vector3",
+            VariantType::Vector3i => "Vector3i",
+            VariantType::Transform2d => "Transform2D",
+            VariantType::Vector4 => "Vector4",
+            VariantType::Vector4i => "Vector4i",
+            VariantType::Plane => "Plane",
+            VariantType::Quaternion => "Quaternion",
+            VariantType::Aabb => "AABB",
+            VariantType::Basis => "Basis",
+            VariantType::Transform3d => "Transform3D",
+            VariantType::Projection => "Projection",
+            VariantType::Color => "Color",
+            VariantType::StringName => "StringName",
+            VariantType::NodePath => "NodePath",
+            VariantType::Rid => "RID",
+            VariantType::Object => "Object",
+            VariantType::Callable => "Callable",
+            VariantType::Signal => "Signal",
+            VariantType::Dictionary => "Dictionary",
+            VariantType::Array => "Array",
+            VariantType::PackedByteArray => "PackedByteArray",
+            VariantType::PackedInt32Array => "PackedInt32Array",
+            VariantType::PackedInt64Array => "PackedInt64Array",
+            VariantType::PackedFloat32Array => "PackedFloat32Array",
+            VariantType::PackedFloat64Array => "PackedFloat64Array",
+            VariantType::PackedStringArray => "PackedStringArray",
+            VariantType::PackedVector2Array => "PackedVector2Array",
+            VariantType::PackedVector3Array => "PackedVector3Array",
+            VariantType::PackedColorArray => "PackedColorArray",
+            VariantType::PackedVector4Array => "PackedVector4Array",
+        }
+    }
 }
 
 impl FromStr for VariantType {
