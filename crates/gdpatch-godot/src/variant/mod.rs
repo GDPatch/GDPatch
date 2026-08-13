@@ -26,6 +26,7 @@ use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
+use std::str::FromStr;
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
@@ -116,6 +117,55 @@ pub enum VariantType {
     PackedVector3Array,
     PackedColorArray,
     PackedVector4Array,
+}
+
+impl FromStr for VariantType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "Nil" => VariantType::Nil,
+            "bool" => VariantType::Bool,
+            "int" => VariantType::Int,
+            "float" => VariantType::Float,
+            "String" => VariantType::String,
+            "Vector2" => VariantType::Vector2,
+            "Vector2i" => VariantType::Vector2i,
+            "Rect2" => VariantType::Rect2,
+            "Rect2i" => VariantType::Rect2i,
+            "Vector3" => VariantType::Vector3,
+            "Vector3i" => VariantType::Vector3i,
+            "Transform2D" => VariantType::Transform2d,
+            "Vector4" => VariantType::Vector4,
+            "Vector4i" => VariantType::Vector4i,
+            "Plane" => VariantType::Plane,
+            "Quaternion" => VariantType::Quaternion,
+            "AABB" => VariantType::Aabb,
+            "Basis" => VariantType::Basis,
+            "Transform3D" => VariantType::Transform3d,
+            "Projection" => VariantType::Projection,
+            "Color" => VariantType::Color,
+            "StringName" => VariantType::StringName,
+            "NodePath" => VariantType::NodePath,
+            "RID" => VariantType::Rid,
+            "Object" => VariantType::Object,
+            "Callable" => VariantType::Callable,
+            "Signal" => VariantType::Signal,
+            "Dictionary" => VariantType::Dictionary,
+            "Array" => VariantType::Array,
+            "PackedByteArray" => VariantType::PackedByteArray,
+            "PackedInt32Array" => VariantType::PackedInt32Array,
+            "PackedInt64Array" => VariantType::PackedInt64Array,
+            "PackedFloat32Array" => VariantType::PackedFloat32Array,
+            "PackedFloat64Array" => VariantType::PackedFloat64Array,
+            "PackedStringArray" => VariantType::PackedStringArray,
+            "PackedVector2Array" => VariantType::PackedVector2Array,
+            "PackedVector3Array" => VariantType::PackedVector3Array,
+            "PackedColorArray" => VariantType::PackedColorArray,
+            "PackedVector4Array" => VariantType::PackedVector4Array,
+            _ => return Err(()),
+        })
+    }
 }
 
 impl TryFrom<u8> for VariantType {

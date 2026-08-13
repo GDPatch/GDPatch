@@ -1,8 +1,10 @@
+use base64::Engine;
+
 use crate::string::{to_float, to_int};
 use crate::variant::{
-    Aabb, Array, Basis, Callable, Color, Dictionary, Nil, NodePath, Plane, Projection, Quaternion,
-    Rect2, Rect2i, Rid, Signal, StringName, Transform2d, Transform3d, Variant, Vector2, Vector2i,
-    Vector3, Vector3i, Vector4, Vector4i,
+    Aabb, Array, Basis, Callable, Color, ContainerType, Dictionary, Nil, NodePath, Object, Plane,
+    Projection, Quaternion, Rect2, Rect2i, Rid, Signal, StringName, Transform2d, Transform3d,
+    Variant, VariantType, Vector2, Vector2i, Vector3, Vector3i, Vector4, Vector4i,
 };
 use std::str::{Chars, FromStr};
 
@@ -357,7 +359,7 @@ impl<'a> VariantParser<'a> {
         }
     }
 
-    fn _parse_construct(&mut self) -> ParseResult<Vec<Token>> {
+    fn parse_construct(&mut self) -> ParseResult<Vec<Token>> {
         let token = self.get_token().ok();
 
         if !matches!(token, Some(Token::ParenthesisOpen)) {
@@ -401,7 +403,7 @@ impl<'a> VariantParser<'a> {
 
     fn parse_construct_integer(&mut self) -> ParseResult<Vec<i64>> {
         Ok(self
-            ._parse_construct()?
+            .parse_construct()?
             .into_iter()
             .map(|token| match token {
                 Token::Float(v) => v as i64,
@@ -413,7 +415,7 @@ impl<'a> VariantParser<'a> {
 
     fn parse_construct_float(&mut self) -> ParseResult<Vec<f64>> {
         Ok(self
-            ._parse_construct()?
+            .parse_construct()?
             .into_iter()
             .map(|token| match token {
                 Token::Float(v) => v,
@@ -423,12 +425,158 @@ impl<'a> VariantParser<'a> {
             .collect::<Vec<_>>())
     }
 
+    fn parse_byte_array(&mut self) -> ParseResult<Vec<u8>> {
+        let token = self.get_token().ok();
+        if !matches!(token, Some(Token::ParenthesisOpen)) {
+            return Err(ParseError("Expected '(' in constructor".into()));
+        }
+
+        let token = self.get_token().ok();
+
+        match token {
+            Some(Token::String(str)) => {
+                // Base64 encoded array.
+
+                // I hate this library so much man -jules
+                let data = base64::engine::general_purpose::STANDARD
+                    .decode(str)
+                    .map_err(|_| ParseError("Invalid base64-encoded string".into()))?;
+
+                let token = self.get_token().ok();
+                if !matches!(token, Some(Token::ParenthesisClose)) {
+                    return Err(ParseError("Expected ')' in constructor".into()));
+                }
+
+                Ok(data)
+            }
+
+            Some(Token::Integer(_) | Token::Float(_) | Token::Identifier(_)) => {
+                // Individual elements.
+                let mut token = token;
+                let mut construct = Vec::new();
+
+                loop {
+                    if !matches!(token, Some(Token::Integer(_) | Token::Float(_))) {
+                        let mut valid = false;
+
+                        if let Some(Token::Identifier(identifier)) = token.as_ref()
+                            && let Some(real) = stor_fix(identifier)
+                        {
+                            token = Some(Token::Float(real));
+                            valid = true;
+                        }
+
+                        if !valid {
+                            return Err(ParseError("Expected number in constructor".into()));
+                        }
+                    }
+
+                    let value = match token {
+                        Some(Token::Float(v)) => v as u8,
+                        Some(Token::Integer(v)) => v as u8,
+                        _ => unreachable!(),
+                    };
+                    construct.push(value);
+
+                    token = self.get_token().ok();
+                    if matches!(token, Some(Token::Comma)) {
+                        //do none
+                    } else if matches!(token, Some(Token::ParenthesisClose)) {
+                        return Ok(construct);
+                    } else {
+                        return Err(ParseError("Expected ',' or ')' in constructor".into()));
+                    }
+
+                    token = self.get_token().ok();
+                }
+            }
+
+            Some(Token::ParenthesisClose) => {
+                // Empty array.
+                Ok(Vec::new())
+            }
+
+            _ => Err(ParseError(
+                "Expected base64 string, or list of numbers in constructor".into(),
+            )),
+        }
+    }
+
     fn parse_dictionary(&mut self) -> ParseResult<Dictionary> {
-        todo!()
+        let mut at_key = true;
+        let mut key: Option<Variant> = None;
+        let mut need_comma = false;
+        let mut object = Dictionary::default();
+
+        loop {
+            let token = self.get_token()?;
+            if matches!(token, Token::Eof) {
+                return Err(ParseError("Unexpected EOF while parsing dictionary".into()));
+            }
+
+            if at_key {
+                if matches!(token, Token::BraceClose) {
+                    return Ok(object);
+                }
+
+                if need_comma {
+                    if !matches!(token, Token::Comma) {
+                        return Err(ParseError("Expected '}' or ','".into()));
+                    } else {
+                        need_comma = false;
+                        continue;
+                    }
+                }
+
+                key = Some(self.parse_value(token)?);
+
+                let token = self.get_token()?;
+                if !matches!(token, Token::Colon) {
+                    return Err(ParseError("Expected ':'".into()));
+                }
+
+                at_key = false;
+            } else {
+                let value = self.parse_value(token)?;
+                let Some(key) = key.as_ref() else {
+                    return Err(ParseError("Expected key for dictionary".into()));
+                };
+
+                object.inner.insert(key.clone(), value);
+
+                need_comma = true;
+                at_key = true;
+            }
+        }
     }
 
     fn parse_array(&mut self) -> ParseResult<Array> {
-        todo!()
+        let mut need_comma = false;
+        let mut array = Array::default();
+
+        loop {
+            let token = self.get_token()?;
+            if matches!(token, Token::Eof) {
+                return Err(ParseError("Unexpected EOF while parsing array".into()));
+            }
+
+            if matches!(token, Token::BracketClose) {
+                return Ok(array);
+            }
+
+            if need_comma {
+                if !matches!(token, Token::Comma) {
+                    return Err(ParseError("Expected ','".into()));
+                } else {
+                    need_comma = false;
+                    continue;
+                }
+            }
+
+            let value = self.parse_value(token)?;
+            array.inner.push(value);
+            need_comma = true;
+        }
     }
 
     fn parse_value(&mut self, token: Token) -> ParseResult<Variant> {
@@ -634,7 +782,7 @@ impl<'a> VariantParser<'a> {
                 }
                 "NodePath" => {
                     let token = self.get_token().ok();
-                    if matches!(token, Some(Token::ParenthesisOpen)) {
+                    if !matches!(token, Some(Token::ParenthesisOpen)) {
                         return Err(ParseError("Expected '('".into()));
                     }
 
@@ -647,7 +795,7 @@ impl<'a> VariantParser<'a> {
                     let path = NodePath::from_str(&s).unwrap_or_default();
 
                     let token = self.get_token().ok();
-                    if matches!(token, Some(Token::ParenthesisClose)) {
+                    if !matches!(token, Some(Token::ParenthesisClose)) {
                         return Err(ParseError("Expected ')'".into()));
                     }
 
@@ -655,7 +803,7 @@ impl<'a> VariantParser<'a> {
                 }
                 "RID" => {
                     let token = self.get_token().ok();
-                    if matches!(token, Some(Token::ParenthesisOpen)) {
+                    if !matches!(token, Some(Token::ParenthesisOpen)) {
                         return Err(ParseError("Expected '('".into()));
                     }
 
@@ -671,7 +819,7 @@ impl<'a> VariantParser<'a> {
                     };
 
                     let token = self.get_token().ok();
-                    if matches!(token, Some(Token::ParenthesisClose)) {
+                    if !matches!(token, Some(Token::ParenthesisClose)) {
                         return Err(ParseError("Expected ')'".into()));
                     }
 
@@ -679,12 +827,12 @@ impl<'a> VariantParser<'a> {
                 }
                 "Signal" => {
                     let token = self.get_token().ok();
-                    if matches!(token, Some(Token::ParenthesisOpen)) {
+                    if !matches!(token, Some(Token::ParenthesisOpen)) {
                         return Err(ParseError("Expected '('".into()));
                     }
 
                     let token = self.get_token().ok();
-                    if matches!(token, Some(Token::ParenthesisClose)) {
+                    if !matches!(token, Some(Token::ParenthesisClose)) {
                         return Err(ParseError("Expected ')'".into()));
                     }
 
@@ -692,31 +840,208 @@ impl<'a> VariantParser<'a> {
                 }
                 "Callable" => {
                     let token = self.get_token().ok();
-                    if matches!(token, Some(Token::ParenthesisOpen)) {
+                    if !matches!(token, Some(Token::ParenthesisOpen)) {
                         return Err(ParseError("Expected '('".into()));
                     }
 
                     let token = self.get_token().ok();
-                    if matches!(token, Some(Token::ParenthesisClose)) {
+                    if !matches!(token, Some(Token::ParenthesisClose)) {
                         return Err(ParseError("Expected ')'".into()));
                     }
 
                     Callable.into()
                 }
                 "Object" => {
-                    todo!()
+                    let token = self.get_token().ok();
+                    if !matches!(token, Some(Token::ParenthesisOpen)) {
+                        return Err(ParseError("Expected '('".into()));
+                    }
+
+                    let Some(Token::Identifier(class)) = self.get_token().ok() else {
+                        return Err(ParseError("Expected identifier with type of object".into()));
+                    };
+
+                    let mut obj = Object {
+                        class,
+                        properties: Default::default(),
+                    };
+
+                    let token = self.get_token().ok();
+                    if !matches!(token, Some(Token::Comma)) {
+                        return Err(ParseError("Expected ',' after object type".into()));
+                    }
+
+                    let mut at_key = true;
+                    let mut key: Option<String> = None;
+                    let mut need_comma = false;
+
+                    loop {
+                        let token = self.get_token()?;
+                        if matches!(token, Token::Eof) {
+                            return Err(ParseError("Unexpected EOF while parsing Object()".into()));
+                        }
+
+                        if at_key {
+                            if matches!(token, Token::ParenthesisClose) {
+                                return Ok(obj.into());
+                            }
+
+                            if need_comma {
+                                if !matches!(token, Token::Comma) {
+                                    return Err(ParseError("Expected '}' or ','".into()));
+                                } else {
+                                    need_comma = false;
+                                    continue;
+                                }
+                            }
+
+                            let Token::String(str) = token else {
+                                return Err(ParseError("Expected property name as string".into()));
+                            };
+
+                            key = Some(str);
+
+                            let token = self.get_token()?;
+                            if !matches!(token, Token::Colon) {
+                                return Err(ParseError("Expected ':'".into()));
+                            }
+
+                            at_key = false;
+                        } else {
+                            let value = self.parse_value(token)?;
+                            let Some(key) = key.as_ref() else {
+                                return Err(ParseError("Expected key for object".into()));
+                            };
+                            obj.properties.insert(key.clone(), value);
+
+                            need_comma = true;
+                            at_key = true;
+                        }
+                    }
                 }
                 "Resource" | "SubResource" | "ExtResource" => {
-                    todo!()
+                    let token = self.get_token().ok();
+                    if !matches!(token, Some(Token::ParenthesisOpen)) {
+                        return Err(ParseError("Expected '('".into()));
+                    }
+
+                    // TODO: calling custom resource parsers?
+
+                    let Ok(Token::String(_path)) = self.get_token() else {
+                        return Err(ParseError(
+                            "Expected string as argument for Resource()".into(),
+                        ));
+                    };
+
+                    unimplemented!("Resource()")
                 }
                 "Dictionary" => {
-                    todo!()
+                    let token = self.get_token().ok();
+                    if !matches!(token, Some(Token::BracketOpen)) {
+                        return Err(ParseError("Expected '['".into()));
+                    }
+
+                    let Ok(Token::Identifier(key)) = self.get_token() else {
+                        return Err(ParseError("Expected type identifier for key".into()));
+                    };
+
+                    let key_type = if let Ok(typ) = VariantType::from_str(&key) {
+                        ContainerType::Builtin(typ)
+                    } else if key == "Resource" || key == "SubResource" || key == "ExtResource" {
+                        unimplemented!("Resource() as Dictionary key")
+                    } else {
+                        ContainerType::ClassName(key)
+                    };
+
+                    let token = self.get_token().ok();
+                    if !matches!(token, Some(Token::Comma)) {
+                        return Err(ParseError("Expected ',' after key type".into()));
+                    }
+
+                    let Ok(Token::Identifier(key)) = self.get_token() else {
+                        return Err(ParseError("Expected type identifier for value".into()));
+                    };
+
+                    let value_type = if let Ok(typ) = VariantType::from_str(&key) {
+                        ContainerType::Builtin(typ)
+                    } else if key == "Resource" || key == "SubResource" || key == "ExtResource" {
+                        unimplemented!("Resource() as Dictionary key")
+                    } else {
+                        ContainerType::ClassName(key)
+                    };
+
+                    let token = self.get_token().ok();
+                    if !matches!(token, Some(Token::BracketClose)) {
+                        return Err(ParseError("Expected ']'".into()));
+                    }
+
+                    let token = self.get_token().ok();
+                    if !matches!(token, Some(Token::ParenthesisOpen)) {
+                        return Err(ParseError("Expected '('".into()));
+                    }
+
+                    let token = self.get_token().ok();
+                    if !matches!(token, Some(Token::BracketOpen)) {
+                        return Err(ParseError("Expected '{'".into()));
+                    }
+
+                    let mut dict = self.parse_dictionary()?;
+                    dict.key_type = key_type;
+                    dict.value_type = value_type;
+
+                    let token = self.get_token().ok();
+                    if !matches!(token, Some(Token::ParenthesisClose)) {
+                        return Err(ParseError("Expected ')'".into()));
+                    }
+
+                    Variant::Dictionary(dict)
                 }
                 "Array" => {
-                    todo!()
+                    let token = self.get_token().ok();
+                    if !matches!(token, Some(Token::BracketOpen)) {
+                        return Err(ParseError("Expected '['".into()));
+                    }
+
+                    let Ok(Token::Identifier(key)) = self.get_token() else {
+                        return Err(ParseError("Expected type identifier".into()));
+                    };
+
+                    let r#type = if let Ok(typ) = VariantType::from_str(&key) {
+                        ContainerType::Builtin(typ)
+                    } else if key == "Resource" || key == "SubResource" || key == "ExtResource" {
+                        unimplemented!("Resource() as Array type")
+                    } else {
+                        ContainerType::ClassName(key)
+                    };
+
+                    let token = self.get_token().ok();
+                    if !matches!(token, Some(Token::BracketClose)) {
+                        return Err(ParseError("Expected ']'".into()));
+                    }
+
+                    let token = self.get_token().ok();
+                    if !matches!(token, Some(Token::ParenthesisOpen)) {
+                        return Err(ParseError("Expected '('".into()));
+                    }
+
+                    let token = self.get_token().ok();
+                    if !matches!(token, Some(Token::BracketOpen)) {
+                        return Err(ParseError("Expected '{'".into()));
+                    }
+
+                    let mut array = self.parse_array()?;
+                    array.element_type = r#type;
+
+                    let token = self.get_token().ok();
+                    if !matches!(token, Some(Token::ParenthesisClose)) {
+                        return Err(ParseError("Expected ')'".into()));
+                    }
+
+                    Variant::Array(array)
                 }
                 "PackedByteArray" | "PoolByteArray" | "ByteArray" => {
-                    todo!()
+                    let args = self.parse_byte_array()?;
+                    Variant::PackedByteArray(args)
                 }
                 "PackedInt32Array" | "PackedIntArray" | "PoolIntArray" | "IntArray" => {
                     let args = self.parse_construct_integer()?;
@@ -735,7 +1060,39 @@ impl<'a> VariantParser<'a> {
                     Variant::PackedFloat64Array(args.iter().map(|p| (*p).into()).collect())
                 }
                 "PackedStringArray" | "PoolStringArray" | "StringArray" => {
-                    todo!()
+                    let token = self.get_token().ok();
+                    if !matches!(token, Some(Token::ParenthesisOpen)) {
+                        return Err(ParseError("Expected '('".into()));
+                    }
+
+                    let mut args = Vec::new();
+
+                    let mut first = true;
+                    loop {
+                        if !first {
+                            let token = self.get_token().ok();
+
+                            if matches!(token, Some(Token::Comma)) {
+                                // do none
+                            } else if matches!(token, Some(Token::ParenthesisClose)) {
+                                break;
+                            } else {
+                                return Err(ParseError("Expected ',' or ')'".into()));
+                            }
+                        }
+
+                        let token = self.get_token().ok();
+                        if matches!(token, Some(Token::ParenthesisClose)) {
+                            break;
+                        } else if let Some(Token::String(str)) = token {
+                            first = false;
+                            args.push(str);
+                        } else {
+                            return Err(ParseError("Expected string".into()));
+                        }
+                    }
+
+                    Variant::PackedStringArray(args)
                 }
                 "PackedVector2Array" | "PoolVector2Array" | "Vector2Array" => {
                     let args = self.parse_construct_float()?;
@@ -799,7 +1156,7 @@ impl<'a> VariantParser<'a> {
         let token = self.get_token()?;
 
         if matches!(token, Token::Eof) {
-            todo!()
+            return Err(ParseError("Expected token, got EOF".into()));
         }
 
         self.parse_value(token)
