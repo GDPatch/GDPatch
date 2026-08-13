@@ -9,6 +9,7 @@ mod object;
 mod rid;
 mod signal;
 mod string_name;
+mod text;
 
 pub use crate::variant::array::Array;
 pub use crate::variant::dictionary::Dictionary;
@@ -21,10 +22,14 @@ pub use crate::variant::object::{Object, ObjectKind};
 pub use crate::variant::rid::Rid;
 pub use crate::variant::signal::Signal;
 pub use crate::variant::string_name::StringName;
+pub use crate::variant::text::{
+    ParseError, ParseResult, Tag, TagAssign, VariantParser, write_variant,
+};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
+use std::str::FromStr;
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
@@ -115,6 +120,101 @@ pub enum VariantType {
     PackedVector3Array,
     PackedColorArray,
     PackedVector4Array,
+}
+
+impl VariantType {
+    pub fn name(&self) -> &str {
+        match self {
+            VariantType::Nil => "Nil",
+            VariantType::Bool => "bool",
+            VariantType::Int => "int",
+            VariantType::Float => "float",
+            VariantType::String => "String",
+            VariantType::Vector2 => "Vector2",
+            VariantType::Vector2i => "Vector2i",
+            VariantType::Rect2 => "Rect2",
+            VariantType::Rect2i => "Rect2i",
+            VariantType::Vector3 => "Vector3",
+            VariantType::Vector3i => "Vector3i",
+            VariantType::Transform2d => "Transform2D",
+            VariantType::Vector4 => "Vector4",
+            VariantType::Vector4i => "Vector4i",
+            VariantType::Plane => "Plane",
+            VariantType::Quaternion => "Quaternion",
+            VariantType::Aabb => "AABB",
+            VariantType::Basis => "Basis",
+            VariantType::Transform3d => "Transform3D",
+            VariantType::Projection => "Projection",
+            VariantType::Color => "Color",
+            VariantType::StringName => "StringName",
+            VariantType::NodePath => "NodePath",
+            VariantType::Rid => "RID",
+            VariantType::Object => "Object",
+            VariantType::Callable => "Callable",
+            VariantType::Signal => "Signal",
+            VariantType::Dictionary => "Dictionary",
+            VariantType::Array => "Array",
+            VariantType::PackedByteArray => "PackedByteArray",
+            VariantType::PackedInt32Array => "PackedInt32Array",
+            VariantType::PackedInt64Array => "PackedInt64Array",
+            VariantType::PackedFloat32Array => "PackedFloat32Array",
+            VariantType::PackedFloat64Array => "PackedFloat64Array",
+            VariantType::PackedStringArray => "PackedStringArray",
+            VariantType::PackedVector2Array => "PackedVector2Array",
+            VariantType::PackedVector3Array => "PackedVector3Array",
+            VariantType::PackedColorArray => "PackedColorArray",
+            VariantType::PackedVector4Array => "PackedVector4Array",
+        }
+    }
+}
+
+impl FromStr for VariantType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "Nil" => VariantType::Nil,
+            "bool" => VariantType::Bool,
+            "int" => VariantType::Int,
+            "float" => VariantType::Float,
+            "String" => VariantType::String,
+            "Vector2" => VariantType::Vector2,
+            "Vector2i" => VariantType::Vector2i,
+            "Rect2" => VariantType::Rect2,
+            "Rect2i" => VariantType::Rect2i,
+            "Vector3" => VariantType::Vector3,
+            "Vector3i" => VariantType::Vector3i,
+            "Transform2D" => VariantType::Transform2d,
+            "Vector4" => VariantType::Vector4,
+            "Vector4i" => VariantType::Vector4i,
+            "Plane" => VariantType::Plane,
+            "Quaternion" => VariantType::Quaternion,
+            "AABB" => VariantType::Aabb,
+            "Basis" => VariantType::Basis,
+            "Transform3D" => VariantType::Transform3d,
+            "Projection" => VariantType::Projection,
+            "Color" => VariantType::Color,
+            "StringName" => VariantType::StringName,
+            "NodePath" => VariantType::NodePath,
+            "RID" => VariantType::Rid,
+            "Object" => VariantType::Object,
+            "Callable" => VariantType::Callable,
+            "Signal" => VariantType::Signal,
+            "Dictionary" => VariantType::Dictionary,
+            "Array" => VariantType::Array,
+            "PackedByteArray" => VariantType::PackedByteArray,
+            "PackedInt32Array" => VariantType::PackedInt32Array,
+            "PackedInt64Array" => VariantType::PackedInt64Array,
+            "PackedFloat32Array" => VariantType::PackedFloat32Array,
+            "PackedFloat64Array" => VariantType::PackedFloat64Array,
+            "PackedStringArray" => VariantType::PackedStringArray,
+            "PackedVector2Array" => VariantType::PackedVector2Array,
+            "PackedVector3Array" => VariantType::PackedVector3Array,
+            "PackedColorArray" => VariantType::PackedColorArray,
+            "PackedVector4Array" => VariantType::PackedVector4Array,
+            _ => return Err(()),
+        })
+    }
 }
 
 impl TryFrom<u8> for VariantType {
@@ -579,5 +679,11 @@ impl From<Signal> for Variant {
 impl From<StringName> for Variant {
     fn from(value: StringName) -> Self {
         Self::StringName(value)
+    }
+}
+
+impl From<Callable> for Variant {
+    fn from(value: Callable) -> Self {
+        Self::Callable(value)
     }
 }

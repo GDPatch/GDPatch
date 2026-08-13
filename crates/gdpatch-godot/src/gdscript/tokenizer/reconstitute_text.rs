@@ -25,19 +25,8 @@
 // SOFTWARE.
 
 use crate::gdscript::{Span, Spanned, Token, TokenType};
+use crate::util::escape_string;
 use crate::variant::Variant;
-
-fn escape_string(s: &str) -> String {
-    s.replace("\\", "\\\\")
-        .replace("\x07", "\\a")
-        .replace("\x08", "\\b")
-        .replace("\x0C", "\\f")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t")
-        .replace("\x0B", "\\v")
-        .replace("\"", "\\\"")
-}
 
 fn is_token_newline_or_indent(token: &Token) -> bool {
     matches!(token, Token::Newline { .. } | Token::Indent | Token::Dedent)

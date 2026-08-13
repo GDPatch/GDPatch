@@ -12,7 +12,7 @@ pub struct ProjectSettings {
 }
 
 impl ProjectSettings {
-    pub const PROJECT_SETTINGS_FILENAME: &str = "project.binary";
+    pub const PROJECT_SETTINGS_PATH: &str = "project.binary";
 
     pub fn parse_binary(contents: &mut ReadableMarshalBuffer<'_>) -> crate::Result<Self> {
         let magic = contents.decode_uint32()?;

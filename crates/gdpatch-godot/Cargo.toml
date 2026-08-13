@@ -15,6 +15,7 @@ harness = false
 test = false
 
 [dependencies]
+base64.workspace = true
 ordered-float.workspace = true
 unicode-xid.workspace = true
 thiserror.workspace = true

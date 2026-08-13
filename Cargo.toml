@@ -24,6 +24,7 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracing-appender = "0.2.3"
 tracing-error = "0.2.1"
 
+base64 = "0.23.1"
 byteorder = "1.5.0"
 dunce = "1.0.5"
 serde = { version = "1.0.219", features = ["derive"] }

@@ -2,6 +2,8 @@
 #![feature(seek_stream_len)]
 
 use color_eyre::eyre::{Context, ContextCompat, OptionExt, bail};
+use gdpatch_godot::config_file::class_cache::ClassCache;
+use gdpatch_godot::config_file::extension_list::ExtensionList;
 use gdpatch_godot::gdscript::parser::parse_to_tokens;
 use gdpatch_godot::gdscript::tokenizer::{
     CompressMode, TokenizerBytecode, TokenizerText, reconstruct_script_binary,
@@ -383,7 +385,7 @@ impl GDPatch {
         };
 
         let project_settings = {
-            let path = ensure_path_prefix(ProjectSettings::PROJECT_SETTINGS_FILENAME);
+            let path = ensure_path_prefix(ProjectSettings::PROJECT_SETTINGS_PATH);
 
             let file = old_pack
                 .files
@@ -412,6 +414,8 @@ impl GDPatch {
             .unwrap_or_default();
 
         let mut uid_cache = UIDCache::default();
+        let mut class_cache = ClassCache::default();
+        let mut extension_list = ExtensionList::default();
 
         // Rebuild files in the virtual pack.
         for (path, file) in &old_pack.files {
@@ -510,13 +514,42 @@ impl GDPatch {
                 error!(?err, "failed to patch script");
             }
 
+            // Merge special files. The fully merged files are added later.
             if normalized_path == UIDCache::UID_CACHE_PATH {
                 let mut buffer = ReadableMarshalBuffer::new(slice, true);
                 if let Err(err) = uid_cache.merge_decode(&mut buffer) {
                     error!(?err, "failed to decode UID cache");
                 }
 
-                // Skip adding UID cache, as it's done later.
+                continue;
+            }
+
+            if normalized_path == ClassCache::CLASS_CACHE_PATH {
+                let result = try {
+                    let str = str::from_utf8(slice).wrap_err("failed to decode string")?;
+                    class_cache
+                        .merge_decode(str)
+                        .map_err(|e| color_eyre::eyre::eyre!(e.0))
+                        .wrap_err("failed to decode class cache")?;
+                };
+
+                if let Err(err) = result {
+                    error!(?err, "failed to merge class cache");
+                }
+
+                continue;
+            }
+
+            if normalized_path == ExtensionList::EXTENSION_LIST_PATH {
+                let result = try {
+                    let str = str::from_utf8(slice).wrap_err("failed to decode string")?;
+                    extension_list.merge_decode(str)
+                };
+
+                if let Err(err) = result {
+                    error!(?err, "failed to merge extension list");
+                }
+
                 continue;
             }
 
@@ -553,21 +586,48 @@ impl GDPatch {
                         continue;
                     }
 
+                    // Always skip project settings that were accidentally included by the editor.
+                    if normalized_path == ProjectSettings::PROJECT_SETTINGS_PATH {
+                        warn!("skipping project settings file in mod pack");
+                        continue;
+                    }
+
+                    // Merge special files. The fully merged files are added later.
                     if normalized_path == UIDCache::UID_CACHE_PATH {
                         let mut buffer = ReadableMarshalBuffer::new(contents.as_slice(), true);
                         if let Err(err) = uid_cache.merge_decode(&mut buffer) {
                             error!(?err, "failed to decode UID cache");
                         }
-                    }
-
-                    if normalized_path == ProjectSettings::PROJECT_SETTINGS_FILENAME {
-                        warn!("skipping project settings file in mod pack");
                         continue;
                     }
 
-                    // TODO: Merge the global script class cache.
-                    if normalized_path == ".godot/global_script_class_cache.cfg" {
-                        warn!("skipping global script class cache in mod pack");
+                    if normalized_path == ClassCache::CLASS_CACHE_PATH {
+                        let result = try {
+                            let str = str::from_utf8(contents.as_slice())
+                                .wrap_err("failed to decode string")?;
+                            class_cache
+                                .merge_decode(str)
+                                .map_err(|e| color_eyre::eyre::eyre!(e.0))
+                        };
+
+                        if let Err(err) = result {
+                            error!(?err, "failed to merge class cache");
+                        }
+
+                        continue;
+                    }
+
+                    if normalized_path == ExtensionList::EXTENSION_LIST_PATH {
+                        let result = try {
+                            let str = str::from_utf8(contents.as_slice())
+                                .wrap_err("failed to decode string")?;
+                            extension_list.merge_decode(str)
+                        };
+
+                        if let Err(err) = result {
+                            error!(?err, "failed to merge extension list");
+                        }
+
                         continue;
                     }
 
@@ -593,7 +653,7 @@ impl GDPatch {
 
                         let patched_data = patched_data.into_inner();
                         builder.add_file(
-                            ensure_path_prefix(ProjectSettings::PROJECT_SETTINGS_FILENAME),
+                            ensure_path_prefix(ProjectSettings::PROJECT_SETTINGS_PATH),
                             patched_data.len() as u64,
                             [0u8; 16], // TODO
                             FileContents::Memory(patched_data),
@@ -608,7 +668,7 @@ impl GDPatch {
             }
         }
 
-        // Save UID cache.
+        // Save merged files.
         {
             let mut buffer = WritableMarshalBuffer::new(false);
             uid_cache.encode(&mut buffer);
@@ -617,6 +677,28 @@ impl GDPatch {
                 buffer.len() as u64,
                 [0u8; 16], // TODO
                 FileContents::Memory(buffer.into_inner()),
+            );
+        }
+
+        {
+            let str = class_cache.write();
+            let buffer = str.as_bytes().to_vec();
+            builder.add_file(
+                ensure_path_prefix(ClassCache::CLASS_CACHE_PATH),
+                buffer.len() as u64,
+                [0u8; 16], // TODO
+                FileContents::Memory(buffer),
+            );
+        }
+
+        {
+            let str = extension_list.write();
+            let buffer = str.as_bytes().to_vec();
+            builder.add_file(
+                ensure_path_prefix(ExtensionList::EXTENSION_LIST_PATH),
+                buffer.len() as u64,
+                [0u8; 16], // TODO
+                FileContents::Memory(buffer),
             );
         }
 

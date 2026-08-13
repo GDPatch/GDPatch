@@ -5,6 +5,7 @@ extern crate core;
 use thiserror::Error;
 
 pub mod build;
+pub mod config_file;
 pub mod gdscript;
 mod marshalling;
 pub mod pack;
