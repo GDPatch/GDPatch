@@ -1,3 +1,4 @@
+//! The global script class cache, which tracks `class_name` statements.
 use crate::{
     config_file::ConfigFile,
     variant::{Array, Variant},

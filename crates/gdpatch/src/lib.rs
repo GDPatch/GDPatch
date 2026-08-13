@@ -3,6 +3,7 @@
 
 use color_eyre::eyre::{Context, ContextCompat, OptionExt, bail};
 use gdpatch_godot::config_file::class_cache::ClassCache;
+use gdpatch_godot::config_file::extension_list::ExtensionList;
 use gdpatch_godot::gdscript::parser::parse_to_tokens;
 use gdpatch_godot::gdscript::tokenizer::{
     CompressMode, TokenizerBytecode, TokenizerText, reconstruct_script_binary,
@@ -414,6 +415,7 @@ impl GDPatch {
 
         let mut uid_cache = UIDCache::default();
         let mut class_cache = ClassCache::default();
+        let mut extension_list = ExtensionList::default();
 
         // Rebuild files in the virtual pack.
         for (path, file) in &old_pack.files {
@@ -537,6 +539,19 @@ impl GDPatch {
                 continue;
             }
 
+            if normalized_path == ExtensionList::EXTENSION_LIST_PATH {
+                let result = try {
+                    let str = str::from_utf8(slice).wrap_err("failed to decode string")?;
+                    extension_list.merge_decode(str)
+                };
+
+                if let Err(err) = result {
+                    error!(?err, "failed to merge extension list");
+                }
+
+                continue;
+            }
+
             // Preserve the original file.
             builder.add_file(path.clone(), file.size, file.hash, contents);
         }
@@ -601,6 +616,20 @@ impl GDPatch {
                         continue;
                     }
 
+                    if normalized_path == ExtensionList::EXTENSION_LIST_PATH {
+                        let result = try {
+                            let str = str::from_utf8(contents.as_slice())
+                                .wrap_err("failed to decode string")?;
+                            extension_list.merge_decode(str)
+                        };
+
+                        if let Err(err) = result {
+                            error!(?err, "failed to merge extension list");
+                        }
+
+                        continue;
+                    }
+
                     trace!("adding modded file");
                     builder.add_file(
                         path.clone(),
@@ -655,6 +684,17 @@ impl GDPatch {
             let buffer = str.as_bytes().to_vec();
             builder.add_file(
                 ensure_path_prefix(ClassCache::CLASS_CACHE_PATH),
+                buffer.len() as u64,
+                [0u8; 16], // TODO
+                FileContents::Memory(buffer),
+            );
+        }
+
+        {
+            let str = extension_list.write();
+            let buffer = str.as_bytes().to_vec();
+            builder.add_file(
+                ensure_path_prefix(ExtensionList::EXTENSION_LIST_PATH),
                 buffer.len() as u64,
                 [0u8; 16], // TODO
                 FileContents::Memory(buffer),

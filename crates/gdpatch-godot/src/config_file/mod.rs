@@ -40,7 +40,7 @@ impl ConfigFile {
         loop {
             match parser
                 .parse_tag_assign_eof(true)
-                .map_err(|e| crate::Error::from(e))?
+                .map_err(crate::Error::from)?
             {
                 Some(TagAssign::Tag(tag)) => {
                     section = tag.name.replace("\\]", "]");
