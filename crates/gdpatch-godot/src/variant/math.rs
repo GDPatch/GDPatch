@@ -1,4 +1,6 @@
 use ordered_float::OrderedFloat;
+use std::str::FromStr;
+use thiserror::Error;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Real(OrderedFloat<f64>);
@@ -243,11 +245,108 @@ pub struct Color {
 
 impl Color {
     pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
+        assert!(
+            (0.0..=1.0).contains(&r),
+            "red color channel not between 0 and 1"
+        );
+        assert!(
+            (0.0..=1.0).contains(&g),
+            "green color channel not between 0 and 1"
+        );
+        assert!(
+            (0.0..=1.0).contains(&b),
+            "blue color channel not between 0 and 1"
+        );
+        assert!(
+            (0.0..=1.0).contains(&a),
+            "alpha channel not between 0 and 1"
+        );
+
         Self {
             r: r.into(),
             g: g.into(),
             b: b.into(),
             a: a.into(),
         }
+    }
+}
+
+impl Default for Color {
+    fn default() -> Self {
+        Self::new(0.0, 0.0, 0.0, 0.0)
+    }
+}
+
+fn _parse_col4(ch: char) -> u8 {
+    let v = if ch.is_ascii_digit() {
+        (ch as u32) - ('0' as u32)
+    } else if matches!(ch, 'a'..='f') {
+        (ch as u32) - ('a' as u32) + 10
+    } else if matches!(ch, 'A'..='F') {
+        (ch as u32) - ('A' as u32) + 10
+    } else {
+        panic!("non-hex character passed to _parse_col4")
+    };
+
+    v as u8
+}
+
+fn _parse_col8(first: char, second: char) -> u8 {
+    _parse_col4(first) << 4 | _parse_col4(second)
+}
+
+#[derive(Debug, Error)]
+#[error("invalid color code: {0}")]
+pub struct ColorFromStrError(pub String);
+
+impl FromStr for Color {
+    type Err = ColorFromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() > 10 {
+            return Err(ColorFromStrError(s.to_owned()));
+        }
+
+        let mut chars = s.chars().collect::<Vec<_>>();
+
+        if chars.first() == Some(&'#') {
+            chars.remove(0);
+        }
+
+        Ok(match chars.len() {
+            3 => {
+                // #rgb
+                let r = _parse_col4(chars[0]) as f32 / 15.0;
+                let g = _parse_col4(chars[1]) as f32 / 15.0;
+                let b = _parse_col4(chars[2]) as f32 / 15.0;
+                Color::new(r, g, b, 1.0)
+            }
+            4 => {
+                // #rgba
+                let r = _parse_col4(chars[0]) as f32 / 15.0;
+                let g = _parse_col4(chars[1]) as f32 / 15.0;
+                let b = _parse_col4(chars[2]) as f32 / 15.0;
+                let a = _parse_col4(chars[3]) as f32 / 15.0;
+                Color::new(r, g, b, a)
+            }
+            6 => {
+                // #rrggbb
+                let r = _parse_col8(chars[0], chars[1]) as f32 / 255.0;
+                let g = _parse_col8(chars[2], chars[3]) as f32 / 255.0;
+                let b = _parse_col8(chars[4], chars[5]) as f32 / 255.0;
+                Color::new(r, g, b, 1.0)
+            }
+            8 => {
+                // #rrggbbaa
+                let r = _parse_col8(chars[0], chars[1]) as f32 / 255.0;
+                let g = _parse_col8(chars[2], chars[3]) as f32 / 255.0;
+                let b = _parse_col8(chars[4], chars[5]) as f32 / 255.0;
+                let a = _parse_col8(chars[6], chars[7]) as f32 / 255.0;
+                Color::new(r, g, b, a)
+            }
+            _ => {
+                return Err(ColorFromStrError(s.to_owned()));
+            }
+        })
     }
 }

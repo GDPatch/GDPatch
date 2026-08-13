@@ -9,6 +9,7 @@ mod object;
 mod rid;
 mod signal;
 mod string_name;
+mod text_parser;
 
 pub use crate::variant::array::Array;
 pub use crate::variant::dictionary::Dictionary;
@@ -579,5 +580,11 @@ impl From<Signal> for Variant {
 impl From<StringName> for Variant {
     fn from(value: StringName) -> Self {
         Self::StringName(value)
+    }
+}
+
+impl From<Callable> for Variant {
+    fn from(value: Callable) -> Self {
+        Self::Callable(value)
     }
 }

@@ -1,4 +1,4 @@
-#[derive(Debug, PartialOrd, Ord, Hash, Eq, PartialEq, Clone)]
+#[derive(Debug, PartialOrd, Ord, Hash, Eq, PartialEq, Clone, Default)]
 pub struct Signal {
     pub name: String,
     pub object_id: u64,
