@@ -529,6 +529,7 @@ impl GDPatch {
                     let str = str::from_utf8(slice).wrap_err("failed to decode string")?;
                     class_cache
                         .merge_decode(str)
+                        .map_err(|e| color_eyre::eyre::eyre!(e.0))
                         .wrap_err("failed to decode class cache")?;
                 };
 
@@ -606,7 +607,7 @@ impl GDPatch {
                                 .wrap_err("failed to decode string")?;
                             class_cache
                                 .merge_decode(str)
-                                .wrap_err("failed to decode class cache")?;
+                                .map_err(|e| color_eyre::eyre::eyre!(e.0))
                         };
 
                         if let Err(err) = result {

@@ -35,9 +35,6 @@ pub enum Error {
     #[error("unsupported/unknown version {}", .0)]
     UnknownVersion(u32),
 
-    #[error("failed to parse")]
-    Parse(String),
-
     #[error("an i/o error occurred: {}", .0)]
     Io(#[from] std::io::Error),
 }

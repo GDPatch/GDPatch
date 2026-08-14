@@ -4,7 +4,7 @@ pub mod extension_list;
 
 use crate::{
     util::escape_string_multiline,
-    variant::{TagAssign, Variant, VariantParser, write_variant},
+    variant::{ParseResult, TagAssign, Variant, VariantParser, write_variant},
 };
 use std::collections::HashMap;
 
@@ -32,16 +32,13 @@ fn property_name_encode(str: &str) -> String {
 }
 
 impl ConfigFile {
-    pub fn parse(data: &str) -> crate::Result<Self> {
+    pub fn parse(data: &str) -> ParseResult<Self> {
         let mut parser = VariantParser::new(data);
         let mut section = String::new();
         let mut inner: HashMap<String, HashMap<String, Variant>> = HashMap::new();
 
         loop {
-            match parser
-                .parse_tag_assign_eof(true)
-                .map_err(crate::Error::from)?
-            {
+            match parser.parse_tag_assign_eof(true)? {
                 Some(TagAssign::Tag(tag)) => {
                     section = tag.name.replace("\\]", "]");
                 }

@@ -74,13 +74,7 @@ pub enum TagAssign {
 }
 
 #[derive(Debug)]
-pub struct ParseError(String);
-
-impl From<ParseError> for crate::Error {
-    fn from(value: ParseError) -> Self {
-        Self::Parse(value.0)
-    }
-}
+pub struct ParseError(pub String);
 
 pub type ParseResult<T, E = ParseError> = Result<T, E>;
 
@@ -578,7 +572,7 @@ impl<'a> VariantParser<'a> {
                 at_key = false;
             } else {
                 let value = self.parse_value(token)?;
-                let Some(key) = key.as_ref() else {
+                let Some(key) = key.take() else {
                     return Err(ParseError("Expected key for dictionary".into()));
                 };
 
@@ -949,10 +943,10 @@ impl<'a> VariantParser<'a> {
                             at_key = false;
                         } else {
                             let value = self.parse_value(token)?;
-                            let Some(key) = key.as_ref() else {
+                            let Some(key) = key.take() else {
                                 return Err(ParseError("Expected key for object".into()));
                             };
-                            obj.properties.insert(key.clone(), value);
+                            obj.properties.insert(key, value);
 
                             need_comma = true;
                             at_key = true;
@@ -1386,11 +1380,7 @@ pub fn write_variant(variant: &Variant, compat: bool) -> String {
             ));
         }
         Variant::Vector2i(value) => {
-            str.push_str(&format!(
-                "Vector2i({}, {})",
-                rtos_fix(value.x.into(), compat),
-                rtos_fix(value.y.into(), compat),
-            ));
+            str.push_str(&format!("Vector2i({}, {})", value.x, value.y));
         }
         Variant::Rect2(value) => {
             str.push_str(&format!(
@@ -1404,10 +1394,7 @@ pub fn write_variant(variant: &Variant, compat: bool) -> String {
         Variant::Rect2i(value) => {
             str.push_str(&format!(
                 "Rect2i({}, {}, {}, {})",
-                rtos_fix(value.position.x.into(), compat),
-                rtos_fix(value.position.y.into(), compat),
-                rtos_fix(value.size.x.into(), compat),
-                rtos_fix(value.size.y.into(), compat),
+                value.position.x, value.position.y, value.size.x, value.size.y,
             ));
         }
         Variant::Vector3(value) => {
@@ -1419,12 +1406,7 @@ pub fn write_variant(variant: &Variant, compat: bool) -> String {
             ));
         }
         Variant::Vector3i(value) => {
-            str.push_str(&format!(
-                "Vector3i({}, {}, {})",
-                rtos_fix(value.x.into(), compat),
-                rtos_fix(value.y.into(), compat),
-                rtos_fix(value.z.into(), compat),
-            ));
+            str.push_str(&format!("Vector3i({}, {}, {})", value.x, value.y, value.z));
         }
         Variant::Vector4(value) => {
             str.push_str(&format!(
@@ -1438,10 +1420,7 @@ pub fn write_variant(variant: &Variant, compat: bool) -> String {
         Variant::Vector4i(value) => {
             str.push_str(&format!(
                 "Vector4i({}, {}, {}, {})",
-                rtos_fix(value.x.into(), compat),
-                rtos_fix(value.y.into(), compat),
-                rtos_fix(value.z.into(), compat),
-                rtos_fix(value.w.into(), compat),
+                value.x, value.y, value.z, value.w,
             ));
         }
         Variant::Plane(value) => {
@@ -1583,7 +1562,7 @@ pub fn write_variant(variant: &Variant, compat: bool) -> String {
                     str.push('.');
                 }
 
-                str.push_str(&format!("\"{}\"", key));
+                str.push_str(&format!("\"{}\":", key));
                 str.push_str(&write_variant(value, compat));
             }
 
@@ -1726,7 +1705,7 @@ pub fn write_variant(variant: &Variant, compat: bool) -> String {
                 "PackedFloat32Array({})",
                 value
                     .iter()
-                    .map(|c| c.to_string())
+                    .map(|c| rtos_fix(c.0 as f64, compat))
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
@@ -1736,7 +1715,7 @@ pub fn write_variant(variant: &Variant, compat: bool) -> String {
                 "PackedFloat64Array({})",
                 value
                     .iter()
-                    .map(|c| c.to_string())
+                    .map(|c| rtos_fix(c.0, compat))
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
