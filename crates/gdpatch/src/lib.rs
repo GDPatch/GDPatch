@@ -34,7 +34,7 @@ use crate::mods::{BUILTIN_MOD_ID, Mods};
 use crate::virtual_pack::builder::VirtualPackBuilder;
 use crate::virtual_pack::{FileContents, VirtualPack};
 pub use config::Config;
-use gdpatch_godot::build::{VersionSpecifier, resolve_approximate_build};
+use gdpatch_godot::build::{GDScriptBuild, VersionSpecifier, resolve_approximate_build};
 use gdpatch_godot::pack::{Pack, PackConfig};
 use gdpatch_godot::{ReadableMarshalBuffer, UIDCache, WritableMarshalBuffer};
 
@@ -346,7 +346,11 @@ impl GDPatch {
             }
         };
 
-        let gdscript_build = &engine_build.gdscript;
+        let gdscript_build = match &engine_build.gdscript {
+            GDScriptBuild::V2(v2) => v2,
+            _ => unimplemented!("GDScript V1"),
+        };
+
         let project_settings = {
             let path = ensure_path_prefix(ProjectSettings::PROJECT_SETTINGS_PATH);
 

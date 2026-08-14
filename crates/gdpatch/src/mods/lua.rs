@@ -1,6 +1,6 @@
 use color_eyre::eyre::WrapErr;
 use gdpatch_godot::{
-    build::GDScriptBuild,
+    build::GDScriptV2Build,
     gdscript::{
         Spanned, Token,
         parser::parse_to_tokens,
@@ -180,7 +180,7 @@ impl PatcherCallbacks {
         &self,
         path: &str,
         mut tokens: Vec<Spanned<Token>>,
-        version: &GDScriptBuild,
+        version: &GDScriptV2Build,
     ) -> color_eyre::Result<Vec<Spanned<Token>>> {
         if self.patch_script_as_text.contains_key(path) {
             tokens = self.patch_script_as_text(path, tokens, version)?;
@@ -201,7 +201,7 @@ impl PatcherCallbacks {
         &self,
         path: &str,
         mut tokens: Vec<Spanned<Token>>,
-        version: &GDScriptBuild,
+        version: &GDScriptV2Build,
     ) -> color_eyre::Result<Vec<Spanned<Token>>> {
         if let Some(funcs) = self.patch_script_as_text.get(path) {
             for PatcherCallback {

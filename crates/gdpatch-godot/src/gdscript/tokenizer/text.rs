@@ -1,6 +1,6 @@
 //! Rust port of the GDScript text tokenizer.
 
-use crate::build::GDScriptBuild;
+use crate::build::GDScriptV2Build;
 use crate::gdscript::tokenizer::Tokenizer;
 use crate::gdscript::{Position, Span, Spanned, Token};
 use crate::private::Sealed;
@@ -18,7 +18,7 @@ use unicode_xid::UnicodeXID;
 #[derive(Debug)]
 pub struct TokenizerText<'v, 's> {
     /// Engine version we're parsing for.
-    version: &'v GDScriptBuild,
+    version: &'v GDScriptV2Build,
 
     /// Full input source.
     source: &'s str,
@@ -62,7 +62,7 @@ fn get_indent_char_name(ch: char) -> Cow<'static, str> {
 }
 
 impl<'v, 's> TokenizerText<'v, 's> {
-    pub fn new(version: &'v GDScriptBuild, source: &'s str) -> Self {
+    pub fn new(version: &'v GDScriptV2Build, source: &'s str) -> Self {
         Self {
             version,
             source,
@@ -1476,7 +1476,7 @@ impl<'s> Iterator for TokenizerText<'_, 's> {
 
 impl Sealed for TokenizerText<'_, '_> {}
 impl Tokenizer for TokenizerText<'_, '_> {
-    fn version(&self) -> &GDScriptBuild {
+    fn version(&self) -> &GDScriptV2Build {
         self.version
     }
 
@@ -1502,7 +1502,7 @@ impl Tokenizer for TokenizerText<'_, '_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::build::{VersionSpecifier, bundled_builds};
+    use crate::build::{GDScriptBuild, VersionSpecifier, bundled_builds};
     use crate::gdscript::tokenizer::{CompressMode, TokenizerBytecode, reconstruct_script_binary};
 
     #[test]
@@ -1511,7 +1511,10 @@ mod tests {
         let build = builds
             .find_exact_build(&VersionSpecifier::from_str("4.5-stable").unwrap())
             .unwrap();
-        let gdscript = &build.gdscript;
+        let gdscript = match &build.gdscript {
+            GDScriptBuild::V2(v2) => v2,
+            _ => unimplemented!("GDScript V1"),
+        };
 
         let src = "
 func meow() -> void:

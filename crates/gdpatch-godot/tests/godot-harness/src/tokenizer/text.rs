@@ -1,5 +1,6 @@
 use crate::SharedInputs;
 use crate::tokenizer::run_tokenizer_and_compare;
+use gdpatch_godot::build::GDScriptBuild;
 use gdpatch_godot::gdscript::tokenizer::TokenizerText;
 use libtest_mimic::Failed;
 use std::path::PathBuf;
@@ -14,7 +15,9 @@ pub fn run_text_tokenizer_test(
     let source = str::from_utf8(&contents)
         .map_err(|err| format!("source file isn't valid utf-8: {}", err))?;
 
-    let gdscript_build = &shared_inputs.build.gdscript;
+    let GDScriptBuild::V2(gdscript_build) = &shared_inputs.build.gdscript else {
+        unreachable!()
+    };
     let tokenizer = TokenizerText::new(gdscript_build, &source);
 
     run_tokenizer_and_compare(&shared_inputs, "tokenizer_text.gd", &contents, tokenizer)

@@ -10,10 +10,17 @@ use std::str::FromStr;
 use std::sync::LazyLock;
 use thiserror::Error;
 
+/// Tokenizer information specific to the GDScript V1 tokenizer.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct GDScriptV1Build {
+    // TODO: add built in function names for V1 binary tokenization
+}
+
 /// GDScript tokenizer and parser information.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub struct GDScriptBuild {
+pub struct GDScriptV2Build {
     // Binary tokenizer info
     /// Version number in the bytecode header. Unset if this version doesn't have a bytecode
     /// format.
@@ -205,6 +212,16 @@ where
             &"-1 or a positive integer",
         ))
     }
+}
+
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum GDScriptBuild {
+    /// GDScript 1.x (3.x engines).
+    V1(GDScriptV1Build),
+
+    /// GDScript 2.x (4.x engines).
+    V2(GDScriptV2Build),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -448,7 +465,7 @@ impl SerializedGDScriptBuild {
                 bail!("GDScript V1 isn't implemented yet");
             }
 
-            (Some(2), None) => expand_resolve!(#error self GDScriptBuild {
+            (Some(2), None) => GDScriptBuild::V2(expand_resolve!(#error self GDScriptV2Build {
                 tokenizer_version,
                 tokens,
                 allow_mixed_indentation_when_multiline,
@@ -478,39 +495,46 @@ impl SerializedGDScriptBuild {
                 allow_keywords_as_attributes,
                 has_72979_annotation_parsing,
                 has_77744_suite_changes,
-            }),
+            })),
 
-            (None, Some(parent)) => expand_resolve!(parent self GDScriptBuild {
-                tokenizer_version,
-                tokens,
-                allow_mixed_indentation_when_multiline,
-                has_improved_invalid_character_error,
-                has_literal_sign_handling,
-                has_new_number_underscore_parsing,
-                has_raw_strings,
-                has_when,
-                need_digits_in_hex_and_binary,
-                has_fixed_continuation_lines,
-                has_uppercase_number_types,
-                has_variadic_functions,
-                expands_tabs_in_span_column,
-                allow_zwsp_as_whitespace,
-                allow_mixed_indentation_on_blank_lines,
-                has_extra_word_in_binary_script_header,
-                has_fixed_multiline_handling_in_super_calls,
-                has_early_bail_in_super_calls,
-                allow_multiline_array_dictionary_patterns,
-                allow_preload_trailing_comma,
-                has_static_variables,
-                has_is_not,
-                allow_empty_parentheses_in_getter_declaration,
-                has_match_error_recovery,
-                has_dictionary_error_recovery,
-                has_typed_for_loops,
-                allow_keywords_as_attributes,
-                has_72979_annotation_parsing,
-                has_77744_suite_changes,
-            }),
+            // inherit from parent
+            (None, Some(GDScriptBuild::V1(_parent))) => {
+                bail!("GDScript V1 isn't implemented yet");
+            }
+
+            (None, Some(GDScriptBuild::V2(parent))) => {
+                GDScriptBuild::V2(expand_resolve!(parent self GDScriptV2Build {
+                    tokenizer_version,
+                    tokens,
+                    allow_mixed_indentation_when_multiline,
+                    has_improved_invalid_character_error,
+                    has_literal_sign_handling,
+                    has_new_number_underscore_parsing,
+                    has_raw_strings,
+                    has_when,
+                    need_digits_in_hex_and_binary,
+                    has_fixed_continuation_lines,
+                    has_uppercase_number_types,
+                    has_variadic_functions,
+                    expands_tabs_in_span_column,
+                    allow_zwsp_as_whitespace,
+                    allow_mixed_indentation_on_blank_lines,
+                    has_extra_word_in_binary_script_header,
+                    has_fixed_multiline_handling_in_super_calls,
+                    has_early_bail_in_super_calls,
+                    allow_multiline_array_dictionary_patterns,
+                    allow_preload_trailing_comma,
+                    has_static_variables,
+                    has_is_not,
+                    allow_empty_parentheses_in_getter_declaration,
+                    has_match_error_recovery,
+                    has_dictionary_error_recovery,
+                    has_typed_for_loops,
+                    allow_keywords_as_attributes,
+                    has_72979_annotation_parsing,
+                    has_77744_suite_changes,
+                }))
+            }
 
             // specified a version and a parent
             (Some(_), Some(_)) => {
