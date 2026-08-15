@@ -3,7 +3,9 @@ mod util;
 
 use crate::{
     Error, Filesilly, HeapStream, StreamFactory,
-    os::linux::detours::{CLOSE_HOOK, OPEN_HOOK, READ_HOOK, SEEK_HOOK, TELL_HOOK, WRITE_HOOK},
+    os::linux::detours::{
+        ACCESS_HOOK, CLOSE_HOOK, OPEN_HOOK, READ_HOOK, SEEK_HOOK, STAT_HOOK, TELL_HOOK, WRITE_HOOK,
+    },
 };
 use dashmap::DashMap;
 use identity_hash::{BuildIdentityHasher, IdentityHashable};
@@ -43,20 +45,20 @@ pub struct FilesillyPlatform {
     /// Map of currently open streams.
     file_descriptors: DashMap<WrappedFd, HeapStream, BuildIdentityHasher<WrappedFd>>,
 
-    /// The path for the base directory we're modifying.
-    base_path: PathBuf,
+    /// The paths for the base directories we're modifying.
+    base_paths: Vec<PathBuf>,
 }
 
 impl FilesillyPlatform {
     const FAKE_HANDLE_START: c_int = 0x90D07; // "GODOT" :+1:
 
-    pub fn new(base_path: &Path) -> crate::Result<Self> {
+    pub fn new(base_paths: &[&Path]) -> crate::Result<Self> {
         let next_handle = AtomicI32::new(Self::FAKE_HANDLE_START);
 
         Ok(Self {
             next_handle,
             file_descriptors: DashMap::default(),
-            base_path: base_path.to_owned(),
+            base_paths: base_paths.iter().map(|p| p.to_path_buf()).collect(),
         })
     }
 
@@ -73,7 +75,7 @@ impl FilesillyPlatform {
     }
 }
 
-pub fn init(base_path: &Path, factory: Box<dyn StreamFactory>) -> crate::Result<()> {
+pub fn init(base_path: &[&Path], factory: Box<dyn StreamFactory>) -> crate::Result<()> {
     let platform = FilesillyPlatform::new(base_path)?;
     Filesilly::setup(platform, factory);
 
@@ -84,6 +86,8 @@ pub fn init(base_path: &Path, factory: Box<dyn StreamFactory>) -> crate::Result<
         WRITE_HOOK.enable()?;
         SEEK_HOOK.enable()?;
         TELL_HOOK.enable()?;
+        STAT_HOOK.enable()?;
+        ACCESS_HOOK.enable()?;
     }
 
     Ok(())

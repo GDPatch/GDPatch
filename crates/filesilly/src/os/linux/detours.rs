@@ -1,13 +1,17 @@
 use crate::{
-    Filesilly, Stream,
+    Filesilly, StatResult, Stream,
     hook::{LockDetour, SillyHook},
-    os::linux::{WrappedFd, util::mark_errno},
+    os::linux::{
+        WrappedFd,
+        util::{mark_errno, resolve_path, system_time_to_timespec},
+    },
     recursion_guard::RecursionGuard,
 };
-use libc::{FILE, c_char, c_int, mode_t, off_t, off64_t, size_t, ssize_t};
+use libc::{FILE, c_char, c_int, mode_t, off_t, off64_t, size_t, ssize_t, stat64};
 use std::{
     ffi::{CStr, OsStr, OsString},
     io::SeekFrom,
+    mem::MaybeUninit,
     os::{raw::c_void, unix::ffi::OsStrExt},
     path::PathBuf,
     slice,
@@ -21,7 +25,7 @@ pub static OPEN_HOOK: LockDetour<OpenFn> =
     LazyLock::new(|| SillyHook::new(c"GLIBC_2.2.5", c"open64", open_detour));
 
 thread_local! {
-    static OPEN_RECURSION_GUARD: RecursionGuard = const { RecursionGuard::new() };
+    static RECURSION_GUARD: RecursionGuard = const { RecursionGuard::new() };
 }
 
 unsafe extern "system" fn open_detour(
@@ -32,7 +36,7 @@ unsafe extern "system" fn open_detour(
     let span = trace_span!(target: "filesilly::hooks", parent: None, "open");
     let _entered = span.enter();
 
-    let Some(result) = OPEN_RECURSION_GUARD
+    let Some(result) = RECURSION_GUARD
         .try_with(|r| match r.acquire() {
             Some(_guard) => unsafe { open_handler(filename) },
             None => {
@@ -67,18 +71,8 @@ unsafe fn open_handler(filename: *const c_char) -> Option<Result<c_int, c_int>> 
         OsStr::from_bytes(str.to_bytes())
     };
     let path: PathBuf = OsString::from(path).into();
-    let path = if !path.is_absolute()
-        && let Ok(current_dir) = std::env::current_dir()
-    {
-        current_dir.join(path)
-    } else {
-        path
-    };
-
-    let base_path = &Filesilly::platform().base_path;
-    let relative_path = path.strip_prefix(base_path).ok()?;
-    let absolute_path = Filesilly::platform().base_path.join(relative_path);
-    let result = Filesilly::factory().open(&absolute_path);
+    let path = resolve_path(&path)?;
+    let result = Filesilly::factory().open(&path);
 
     let stream = match result {
         Ok(None) => return None,
@@ -210,6 +204,10 @@ where
 {
     let stream = Filesilly::platform().get_stream(fd)?;
 
+    if ptr.is_null() {
+        return Some(Ok(0));
+    }
+
     let res = {
         let mut guard = stream.lock();
         // FIXME(jules): this is subtly wrong, it should attempt to read *up to* size elements of nobj size
@@ -244,7 +242,7 @@ unsafe extern "system" fn seek_detour(stream: *mut FILE, offset: off_t, whence: 
     };
 
     match result {
-        Ok(offset) => offset as off64_t,
+        Ok(_) => 0,
         Err(errno) => {
             span.record("errno", field::debug(errno));
             mark_errno(errno);
@@ -316,4 +314,140 @@ unsafe fn tell_handler(fd: c_int) -> Option<Result<u64, c_int>> {
         error!(?error, "failed to tell fake fd");
         error.raw_os_error().unwrap_or(libc::EINVAL)
     }))
+}
+
+type StatFn = unsafe extern "system" fn(filename: *const c_char, buf: *mut stat64) -> c_int;
+pub static STAT_HOOK: LockDetour<StatFn> =
+    LazyLock::new(|| SillyHook::new(c"GLIBC_2.33", c"stat64", stat_detour));
+
+unsafe extern "system" fn stat_detour(filename: *const c_char, buf: *mut stat64) -> c_int {
+    let span = trace_span!(target: "filesilly::hooks", parent: None, "stat");
+    let _entered = span.enter();
+
+    let Some(result) = RECURSION_GUARD
+        .try_with(|r| match r.acquire() {
+            Some(_guard) => unsafe { stat_handler(filename) },
+            None => {
+                trace!("re-entrant call to stat");
+                None
+            }
+        })
+        .ok()
+        .flatten()
+    else {
+        // forward unmodified call
+        unsafe { return STAT_HOOK.unwrap().call(filename, buf) }
+    };
+
+    match result {
+        Ok(stat) => {
+            unsafe {
+                *buf = stat;
+            }
+
+            0
+        }
+
+        Err(errno) => {
+            span.record("errno", field::debug(errno));
+            mark_errno(errno);
+            -1
+        }
+    }
+}
+
+unsafe fn stat_handler(filename: *const c_char) -> Option<Result<stat64, c_int>> {
+    let path = unsafe {
+        let str = CStr::from_ptr(filename);
+        OsStr::from_bytes(str.to_bytes())
+    };
+    let path: PathBuf = OsString::from(path).into();
+    let path = resolve_path(&path)?;
+
+    let result = Filesilly::factory().stat(&path);
+    match result {
+        Ok(StatResult::Passthrough) => None,
+        Ok(StatResult::DoesntExist) => Some(Err(libc::ENOENT)),
+        Ok(StatResult::Exists(info)) => {
+            let stat = MaybeUninit::<stat64>::zeroed();
+            let mut stat = unsafe { stat.assume_init() };
+
+            stat.st_mode = libc::S_IFREG;
+            stat.st_size = info.size as i64;
+
+            let access_time = system_time_to_timespec(info.access_time);
+            stat.st_atime = access_time.0;
+            stat.st_atime_nsec = access_time.1;
+
+            let modification_time = system_time_to_timespec(info.modification_time);
+            stat.st_mtime = modification_time.0;
+            stat.st_mtime_nsec = modification_time.1;
+
+            let change_time = system_time_to_timespec(info.change_time);
+            stat.st_ctime = change_time.0;
+            stat.st_ctime_nsec = change_time.1;
+
+            Some(Ok(stat))
+        }
+        Err(err) => {
+            error!(?err, "stream factory returned an error");
+            let status = err.raw_os_error().unwrap_or(libc::EINVAL);
+            Some(Err(status))
+        }
+    }
+}
+
+type AccessFn = unsafe extern "system" fn(filename: *const c_char, r#typ: c_int) -> c_int;
+pub static ACCESS_HOOK: LockDetour<AccessFn> =
+    LazyLock::new(|| SillyHook::new(c"GLIBC_2.2.5", c"access", access_detour));
+
+unsafe extern "system" fn access_detour(filename: *const c_char, typ: c_int) -> c_int {
+    let span = trace_span!(target: "filesilly::hooks", parent: None, "access");
+    let _entered = span.enter();
+
+    let Some(result) = RECURSION_GUARD
+        .try_with(|r| match r.acquire() {
+            Some(_guard) => unsafe { access_handler(filename) },
+            None => {
+                trace!("re-entrant call to access");
+                None
+            }
+        })
+        .ok()
+        .flatten()
+    else {
+        // forward unmodified call
+        unsafe { return ACCESS_HOOK.unwrap().call(filename, typ) }
+    };
+
+    match result {
+        Ok(()) => 0,
+
+        Err(errno) => {
+            span.record("errno", field::debug(errno));
+            mark_errno(errno);
+            -1
+        }
+    }
+}
+
+unsafe fn access_handler(filename: *const c_char) -> Option<Result<(), c_int>> {
+    let path = unsafe {
+        let str = CStr::from_ptr(filename);
+        OsStr::from_bytes(str.to_bytes())
+    };
+    let path: PathBuf = OsString::from(path).into();
+    let path = resolve_path(&path)?;
+
+    let result = Filesilly::factory().stat(&path);
+    match result {
+        Ok(StatResult::Passthrough) => None,
+        Ok(StatResult::DoesntExist) => Some(Err(libc::ENOENT)),
+        Ok(StatResult::Exists(_)) => Some(Ok(())),
+        Err(err) => {
+            error!(?err, "stream factory returned an error");
+            let status = err.raw_os_error().unwrap_or(libc::EINVAL);
+            Some(Err(status))
+        }
+    }
 }
