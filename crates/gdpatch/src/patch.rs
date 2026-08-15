@@ -17,7 +17,6 @@ use gdpatch_godot::{
     },
     pack::Pack,
     project_settings::ProjectSettings,
-    variant::Variant,
 };
 use memmap2::Mmap;
 use std::sync::Arc;
@@ -133,22 +132,9 @@ impl<'a> Patcher<'a> {
         };
 
         // Update some flags based off of the project settings.
-        self.real_t_is_double = project_settings
-            .inner
-            .get("application/config/features")
-            .map(|p| match p {
-                Variant::PackedStringArray(array) => array.iter().any(|f| f == "Double Precision"),
-                _ => false,
-            })
-            .unwrap_or_default();
-        self.use_hidden_project_data_directory = project_settings
-            .inner
-            .get("application/config/use_hidden_project_data_directory")
-            .map(|p| match p {
-                Variant::Bool(value) => *value,
-                _ => true,
-            })
-            .unwrap_or(true);
+        self.real_t_is_double = project_settings.real_t_is_double();
+        self.use_hidden_project_data_directory =
+            project_settings.use_hidden_project_data_directory();
 
         project_settings
     }
