@@ -130,7 +130,10 @@ extern "C" fn dll_main(dll_handle: HINSTANCE, reason: u32, _reserved: *const ())
     // Attach console (using a non-figment env var!)
     console::setup_panic_hook();
 
-    if get_console_env_var()
+    let disabled = gdpatch::is_disabled();
+
+    if !disabled
+        && get_console_env_var()
         && let Err(err) = console::setup_console()
     {
         // good luck seeing this error message
@@ -140,6 +143,10 @@ extern "C" fn dll_main(dll_handle: HINSTANCE, reason: u32, _reserved: *const ())
     // Load the DLL we're proxying.
     if let Err(err) = setup_proxy(dll_handle.into()) {
         eprintln!("Failed to setup DLL proxying - game may crash: {err:?}")
+    }
+
+    if disabled {
+        return true;
     }
 
     if let Err(e) = setup_entrypoint_hook() {

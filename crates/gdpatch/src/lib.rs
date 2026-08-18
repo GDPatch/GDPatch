@@ -42,6 +42,18 @@ use gdpatch_godot::{ReadableMarshalBuffer, UIDCache, WritableMarshalBuffer};
 
 static INSTANCE: OnceLock<GDPatch> = OnceLock::new();
 
+pub fn is_disabled() -> bool {
+    std::env::args_os().any(|arg| arg == "--gdpatch-disable")
+}
+
+fn root_dir_from_args() -> Option<PathBuf> {
+    std::env::args_os().find_map(|arg| {
+        arg.to_str()
+            .and_then(|arg| arg.strip_prefix("--gdpatch-root-directory="))
+            .map(PathBuf::from)
+    })
+}
+
 #[derive(Debug)]
 pub struct GDPatch {
     pub config: Config,
@@ -127,7 +139,9 @@ impl GDPatch {
             .to_path_buf();
 
         // This is one of the few environment variables that we don't use via figment
-        let root_directory = if let Ok(dir) = std::env::var("GDPATCH_ROOT_DIRECTORY") {
+        let root_directory = if let Some(dir) = root_dir_from_args() {
+            dir
+        } else if let Ok(dir) = std::env::var("GDPATCH_ROOT_DIRECTORY") {
             PathBuf::from(dir)
         } else {
             game_directory.join("GDPatch")

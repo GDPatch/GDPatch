@@ -3,6 +3,10 @@ use gdpatch::GDPatch;
 
 #[ctor::ctor]
 pub fn main() {
+    if gdpatch::is_disabled() {
+        return;
+    }
+
     // For some reason this function is being called multiple times, so jank workaround for now
     unsafe {
         if std::env::var("GDPATCH_INIT").is_ok() {
