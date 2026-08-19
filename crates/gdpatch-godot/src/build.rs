@@ -17,7 +17,7 @@ pub struct GDScriptV1Build {
     // TODO: add built in function names for V1 binary tokenization
 }
 
-/// GDScript tokenizer and parser information.
+/// Tokenizer information specific to the GDScript V2 tokenizer.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct GDScriptV2Build {
