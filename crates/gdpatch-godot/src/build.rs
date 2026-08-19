@@ -609,7 +609,7 @@ pub enum FindApproximateBuildResult<'builds> {
 impl EngineBuilds {
     /// Resolves parent versions into flat builds, using the existing builds as a base.
     pub fn resolve(
-        self,
+        &self,
         serialized_builds: &mut SerializedEngineBuilds,
     ) -> crate::Result<EngineBuilds, Report> {
         // already resolved entries
@@ -986,7 +986,7 @@ pub fn resolve_approximate_build(
     const CUSTOM_BUILD_FLAVOR: &str = "custom"; // TODO: should we change this?
 
     // Resolve the pack version ahead of time, so we know what to use as a parent.
-    let bundled_builds = bundled_builds().clone();
+    let bundled_builds = bundled_builds();
     let pack_engine_build = bundled_builds
         .find_approximate_build(&pack_version)
         .context("failed to resolve pack engine build")?

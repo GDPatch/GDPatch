@@ -577,3 +577,7 @@ expands_tabs_in_span_column = true
 [engine."4.7.1-stable"]
 parent = "4.7-stable"
 commit = "a13da4feb8d8aefc283c3763d33a2f170a18d541"
+
+[engine."4.7.2-stable"]
+parent = "4.7.1-stable"
+commit = "ed1daf0bf001b61586d9930840f2f1394092c079"
