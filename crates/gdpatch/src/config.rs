@@ -4,7 +4,7 @@ use figment::{
     Figment,
     providers::{Env, Format, Serialized, Toml},
 };
-use gdpatch_godot::build::VersionSpecifier;
+use gdpatch_godot::{build::SerializedEngineBuild, pack::PackConfig};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use toml_edit::{DocumentMut, RawString};
@@ -15,11 +15,11 @@ pub struct Config {
     /// Logging configuration.
     pub log: ConfigLog,
 
-    /// Engine version configuration.
-    pub engine: ConfigEngine,
-
     /// Debugging related configuration.
     pub debug: ConfigDebug,
+
+    /// Engine version overrides.
+    pub engine: Option<ConfigEngine>,
 }
 
 #[derive(Deserialize, Serialize, Debug, DocumentedFieldsOpt)]
@@ -65,25 +65,13 @@ impl From<LogLevel> for LevelFilter {
     }
 }
 
-// TODO: unify version and flavor into the same field, probably
-#[derive(Deserialize, Serialize, Debug, DocumentedFieldsOpt)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct ConfigEngine {
-    /// The engine flavor to use for this game. Defaults to "stable".
-    /// You should leave this as the default unless this game requires a special value.
-    pub flavor: String,
+    #[serde(flatten, default)]
+    pub engine: SerializedEngineBuild,
 
-    /// The engine version to use for this game, as a version string (e.g. "4.6.0").
-    /// You should leave this unset unless this game requires a special value.
-    pub version: Option<VersionSpecifier>,
-}
-
-impl Default for ConfigEngine {
-    fn default() -> Self {
-        Self {
-            flavor: "stable".to_string(),
-            version: None,
-        }
-    }
+    #[serde(flatten, default)]
+    pub pack: PackConfig,
 }
 
 #[derive(Deserialize, Serialize, Debug, DocumentedFieldsOpt, Default)]
@@ -122,7 +110,6 @@ impl Config {
         let mut doc = toml_edit::ser::to_string_pretty(self)?.parse::<DocumentMut>()?;
 
         annotate_toml_with_docs::<ConfigLog>(&mut doc, "log")?;
-        annotate_toml_with_docs::<ConfigEngine>(&mut doc, "engine")?;
         annotate_toml_with_docs::<ConfigDebug>(&mut doc, "debug")?;
 
         Ok(doc.to_string())

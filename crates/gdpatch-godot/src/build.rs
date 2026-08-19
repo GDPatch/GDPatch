@@ -1,10 +1,9 @@
 use crate::gdscript::TokenType;
 use color_eyre::Report;
-use color_eyre::eyre::{OptionExt, bail, eyre};
+use color_eyre::eyre::{Context as _, ContextCompat, OptionExt, bail, eyre};
 use serde::de::{Error, Unexpected};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
-use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, btree_map};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
@@ -18,7 +17,7 @@ pub struct GDScriptV1Build {
     // TODO: add built in function names for V1 binary tokenization
 }
 
-/// Tokenizer information specific to the GDScript V2 tokenizer.
+/// GDScript tokenizer and parser information.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct GDScriptV2Build {
@@ -225,10 +224,7 @@ pub enum GDScriptBuild {
     V2(GDScriptV2Build),
 }
 
-#[derive(Debug, Clone)]
-pub struct GDScriptBuilds(pub HashMap<String, GDScriptBuild>);
-
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[non_exhaustive]
 #[serde(deny_unknown_fields)]
 pub struct SerializedGDScriptBuild {
@@ -561,67 +557,6 @@ impl SerializedGDScriptBuild {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct SerializedGDScriptBuilds(pub HashMap<String, SerializedGDScriptBuild>);
-
-impl SerializedGDScriptBuilds {
-    pub fn resolve(mut self) -> crate::Result<GDScriptBuilds, Report> {
-        // already resolved entries
-        let mut resolved = HashMap::new();
-
-        // stack of entries that are waiting to resolve due to their parents not being resolved yet
-        let mut current_stack = Vec::new();
-
-        fn resolve<'a>(
-            serialized_builds: &mut HashMap<String, SerializedGDScriptBuild>,
-            resolved_builds: &'a mut HashMap<String, GDScriptBuild>,
-            current_stack: &mut Vec<String>,
-            id: String,
-        ) -> crate::Result<&'a GDScriptBuild, Report> {
-            current_stack.push(id.clone());
-
-            // check if already resolved
-            if resolved_builds.contains_key(&id) {
-                return Ok(&resolved_builds[&id]);
-            }
-
-            // remove build from builds list
-            let serialized_build = serialized_builds
-                .remove(&id)
-                .ok_or_else(|| eyre!("unknown GDScript build {} in parent dependencies", &id))?;
-
-            // resolve parent first
-            let parent = match &serialized_build.parent {
-                None => None,
-                Some(parent_id) => Some(resolve(
-                    serialized_builds,
-                    resolved_builds,
-                    current_stack,
-                    parent_id.clone(),
-                )?),
-            };
-
-            let build = serialized_build.resolve(parent)?;
-
-            let Entry::Vacant(entry) = resolved_builds.entry(id.clone()) else {
-                unreachable!()
-            };
-
-            let build_ref = entry.insert(build);
-            current_stack.pop();
-
-            Ok(&*build_ref)
-        }
-
-        // remove random entry from builds and resolve it
-        while let Some(version) = self.0.keys().next().cloned() {
-            resolve(&mut self.0, &mut resolved, &mut current_stack, version)?;
-        }
-
-        Ok(GDScriptBuilds(resolved))
-    }
-}
-
 /// Metadata about the engine version to parse for.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -672,6 +607,74 @@ pub enum FindApproximateBuildResult<'builds> {
 }
 
 impl EngineBuilds {
+    /// Resolves parent versions into flat builds, using the existing builds as a base.
+    pub fn resolve(
+        &self,
+        serialized_builds: &mut SerializedEngineBuilds,
+    ) -> crate::Result<EngineBuilds, Report> {
+        // already resolved entries
+        let mut resolved = BTreeMap::new();
+        for (version, build) in &self.0 {
+            resolved.insert(version.clone(), build.clone());
+        }
+
+        // stack of entries that are waiting to resolve due to their parents not being resolved yet
+        let mut current_stack = Vec::new();
+
+        fn resolve<'a>(
+            serialized_builds: &mut HashMap<VersionSpecifier, SerializedEngineBuild>,
+            resolved_builds: &'a mut BTreeMap<VersionSpecifier, EngineBuild>,
+            current_stack: &mut Vec<VersionSpecifier>,
+            version: VersionSpecifier,
+        ) -> crate::Result<&'a EngineBuild, Report> {
+            current_stack.push(version.clone());
+
+            // check if already resolved
+            if resolved_builds.contains_key(&version) {
+                return Ok(&resolved_builds[&version]);
+            }
+
+            // remove build from builds list
+            let serialized_build = serialized_builds
+                .remove(&version)
+                .ok_or_else(|| eyre!("unknown build {} in parent dependencies", &version))?;
+
+            // resolve parent first
+            let parent = match &serialized_build.parent {
+                None => None,
+                Some(parent_version) => Some(resolve(
+                    serialized_builds,
+                    resolved_builds,
+                    current_stack,
+                    parent_version.clone(),
+                )?),
+            };
+
+            let build = serialized_build.resolve(version.clone(), parent)?;
+
+            let btree_map::Entry::Vacant(entry) = resolved_builds.entry(version.clone()) else {
+                unreachable!()
+            };
+
+            let build_ref = entry.insert(build);
+            current_stack.pop();
+
+            Ok(&*build_ref)
+        }
+
+        // remove random entry from builds and resolve it
+        while let Some(version) = serialized_builds.0.keys().next().cloned() {
+            resolve(
+                &mut serialized_builds.0,
+                &mut resolved,
+                &mut current_stack,
+                version,
+            )?;
+        }
+
+        Ok(EngineBuilds(resolved))
+    }
+
     /// Finds a build that approximately matches a version specifier.
     ///
     /// Builds are matched by the major version and flavor first (both must be equal to the
@@ -834,7 +837,7 @@ impl VersionSpecifier {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[non_exhaustive]
 #[serde(deny_unknown_fields)]
 pub struct SerializedEngineBuild {
@@ -848,19 +851,19 @@ pub struct SerializedEngineBuild {
 
     /// GDScript information.
     #[serde(default)]
-    pub gdscript: Option<String>,
+    pub gdscript: Option<SerializedGDScriptBuild>,
 
     /// Whether paths in the pack file no longer contain the `res://` prefix or not. Official builds changed this in
     /// [`2ac562cdf8366876381902a0667fec704e357495`] (4.4).
     ///
     /// [`2ac562cdf8366876381902a0667fec704e357495`]: https://github.com/godotengine/godot/commit/2ac562cdf8366876381902a0667fec704e357495
+    #[serde(default)]
     pub has_prefixless_pck_paths: Option<bool>,
 }
 
 impl SerializedEngineBuild {
     pub fn resolve(
         self,
-        gdscript_versions: &GDScriptBuilds,
         version: VersionSpecifier,
         parent: Option<&EngineBuild>,
     ) -> crate::Result<EngineBuild, Report> {
@@ -869,11 +872,7 @@ impl SerializedEngineBuild {
                 bail!("build is missing field `gdscript`");
             }
             (None, Some(parent)) => parent.gdscript.clone(),
-            (Some(id), _) => gdscript_versions
-                .0
-                .get(&id)
-                .ok_or_else(|| eyre!("build references unknown GDScript build {}", id))?
-                .clone(),
+            (Some(build), parent) => build.clone().resolve(parent.map(|p| &p.gdscript))?,
         };
 
         Ok(EngineBuild {
@@ -891,15 +890,12 @@ impl SerializedEngineBuild {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct SerializedEngineBuilds(pub HashMap<VersionSpecifier, SerializedEngineBuild>);
 
 impl SerializedEngineBuilds {
     /// Resolves parent versions into flat builds.
-    pub fn resolve(
-        mut self,
-        gdscript_versions: &GDScriptBuilds,
-    ) -> crate::Result<EngineBuilds, Report> {
+    pub fn resolve(mut self) -> crate::Result<EngineBuilds, Report> {
         // already resolved entries
         let mut resolved = BTreeMap::new();
 
@@ -910,7 +906,6 @@ impl SerializedEngineBuilds {
             serialized_builds: &mut HashMap<VersionSpecifier, SerializedEngineBuild>,
             resolved_builds: &'a mut BTreeMap<VersionSpecifier, EngineBuild>,
             current_stack: &mut Vec<VersionSpecifier>,
-            gdscript_versions: &GDScriptBuilds,
             version: VersionSpecifier,
         ) -> crate::Result<&'a EngineBuild, Report> {
             current_stack.push(version.clone());
@@ -932,12 +927,11 @@ impl SerializedEngineBuilds {
                     serialized_builds,
                     resolved_builds,
                     current_stack,
-                    gdscript_versions,
                     parent_version.clone(),
                 )?),
             };
 
-            let build = serialized_build.resolve(gdscript_versions, version.clone(), parent)?;
+            let build = serialized_build.resolve(version.clone(), parent)?;
 
             let btree_map::Entry::Vacant(entry) = resolved_builds.entry(version.clone()) else {
                 unreachable!()
@@ -951,13 +945,7 @@ impl SerializedEngineBuilds {
 
         // remove random entry from builds and resolve it
         while let Some(version) = self.0.keys().next().cloned() {
-            resolve(
-                &mut self.0,
-                &mut resolved,
-                &mut current_stack,
-                gdscript_versions,
-                version,
-            )?;
+            resolve(&mut self.0, &mut resolved, &mut current_stack, version)?;
         }
 
         Ok(EngineBuilds(resolved))
@@ -967,16 +955,12 @@ impl SerializedEngineBuilds {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SerializedBuildsFile {
-    pub gdscript: SerializedGDScriptBuilds,
     pub engine: SerializedEngineBuilds,
 }
 
 impl SerializedBuildsFile {
     pub fn resolve(self) -> crate::Result<EngineBuilds, Report> {
-        let gdscript = self.gdscript.resolve()?;
-        let engine = self.engine.resolve(&gdscript)?;
-
-        Ok(engine)
+        self.engine.resolve()
     }
 }
 
@@ -993,4 +977,75 @@ static BUNDLED_BUILDS: LazyLock<EngineBuilds> = LazyLock::new(|| {
 
 pub fn bundled_builds() -> &'static EngineBuilds {
     &BUNDLED_BUILDS
+}
+
+pub fn resolve_approximate_build(
+    pack_version: VersionSpecifier,
+    custom_engine: Option<SerializedEngineBuild>,
+) -> color_eyre::Result<EngineBuild> {
+    const CUSTOM_BUILD_FLAVOR: &str = "custom"; // TODO: should we change this?
+
+    // Resolve the pack version ahead of time, so we know what to use as a parent.
+    let bundled_builds = bundled_builds();
+    let pack_engine_build = bundled_builds
+        .find_approximate_build(&pack_version)
+        .context("failed to resolve pack engine build")?
+        .clone();
+
+    let custom_version = if let Some(parent) = custom_engine.as_ref().and_then(|p| p.parent.clone())
+    {
+        // Use the engine's parent version, with a custom flavor.
+        Some((
+            VersionSpecifier::new(
+                parent.major,
+                parent.minor,
+                parent.patch,
+                parent.sub_patch,
+                CUSTOM_BUILD_FLAVOR,
+            ),
+            parent,
+        ))
+    } else if custom_engine.is_some() {
+        // Use the pack file's resolved version, with a custom flavor.
+        let pack_version = pack_engine_build.version.clone();
+
+        Some((
+            VersionSpecifier::new(
+                pack_version.major,
+                pack_version.minor,
+                pack_version.patch,
+                pack_version.sub_patch,
+                CUSTOM_BUILD_FLAVOR,
+            ),
+            pack_version,
+        ))
+    } else {
+        None
+    };
+
+    if let Some((version, parent)) = custom_version {
+        // Add our custom engine build.
+        let mut custom_engine = custom_engine.unwrap_or_default();
+
+        // Set the parent engine version if it wasn't set by the user.
+        if custom_engine.parent.is_none() {
+            custom_engine.parent = Some(parent);
+        }
+
+        // Add them to the build catalog and resolve our custom version.
+        let mut serialized_builds = SerializedEngineBuilds::default();
+        serialized_builds.0.insert(version.clone(), custom_engine);
+
+        let custom_builds = bundled_builds
+            .resolve(&mut serialized_builds)
+            .wrap_err("failed to resolve custom engine builds")?;
+
+        custom_builds
+            .find_exact_build(&version)
+            .wrap_err("failed to resolve custom engine build")
+            .cloned()
+    } else {
+        // No custom version to worry about, just return the pack engine build.
+        Ok(pack_engine_build)
+    }
 }

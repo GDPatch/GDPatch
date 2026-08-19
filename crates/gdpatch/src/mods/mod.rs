@@ -5,7 +5,7 @@ use crate::virtual_pack::FileContents;
 use color_eyre::eyre::{Context, Report, bail};
 use figment::Figment;
 use figment::providers::{Format, Toml};
-use gdpatch_godot::pack::Pack;
+use gdpatch_godot::pack::{Pack, PackConfig};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -170,6 +170,7 @@ impl Mods {
     fn read_mod_from_directory(
         fs: &dyn ModLoaderFs,
         configs_directory: &Path,
+        pack_config: PackConfig,
     ) -> color_eyre::Result<Mod> {
         // Check for a `gdpatch_mod.toml` file.
         let mod_info_path = PathBuf::from("gdpatch_mod.toml");
@@ -210,7 +211,7 @@ impl Mods {
         let pack = if fs.exists(&pck_path)? {
             let file = fs.read(&pck_path).wrap_err("reading data.pck")?;
             let cursor = Cursor::new(file.as_slice());
-            let pack = Pack::parse(cursor).wrap_err("reading pck")?;
+            let pack = Pack::parse(cursor, pack_config).wrap_err("reading pck")?;
 
             Some(ModPack::PackFile {
                 pack,
@@ -242,6 +243,7 @@ impl Mods {
     pub fn search_and_load(
         mods_directory: &Path,
         configs_directory: &Path,
+        pack_config: PackConfig,
     ) -> Result<Self, Vec<Report>> {
         let mut errors = Vec::new();
 
@@ -276,7 +278,7 @@ impl Mods {
             };
             let fs = ModLoaderMapFs::new(fs);
 
-            match Mods::read_mod_from_directory(&fs, configs_directory) {
+            match Mods::read_mod_from_directory(&fs, configs_directory, pack_config.clone()) {
                 Ok(r#mod) => {
                     mods.insert(r#mod.info.id.clone(), r#mod);
                 }
@@ -307,7 +309,7 @@ impl Mods {
                 .expect("directory doesn't have parent path as prefix?");
 
             let fs = ModLoaderFolderFs::new(candidate_path.clone());
-            match Mods::read_mod_from_directory(&fs, configs_directory) {
+            match Mods::read_mod_from_directory(&fs, configs_directory, pack_config.clone()) {
                 Ok(r#mod) => {
                     if mods.contains_key(&r#mod.info.id) {
                         tracing::warn!(

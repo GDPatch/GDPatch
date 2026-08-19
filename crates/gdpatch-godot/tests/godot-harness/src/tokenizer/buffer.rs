@@ -16,7 +16,6 @@ pub fn convert_and_run_buffer_tokenizer_test(
     let GDScriptBuild::V2(gdscript_build) = &shared_inputs.build.gdscript else {
         unreachable!()
     };
-
     if gdscript_build.tokenizer_version.is_none() {
         return Ok(Completion::ignored_with("bytecode scripts unsupported"));
     }

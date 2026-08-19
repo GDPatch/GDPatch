@@ -1507,12 +1507,13 @@ mod tests {
 
     #[test]
     fn test_newline_jank() {
-        let build = bundled_builds()
+        let builds = bundled_builds();
+        let build = builds
             .find_exact_build(&VersionSpecifier::from_str("4.5-stable").unwrap())
             .unwrap();
-
-        let GDScriptBuild::V2(gdscript) = &build.gdscript else {
-            unreachable!()
+        let gdscript = match &build.gdscript {
+            GDScriptBuild::V2(v2) => v2,
+            _ => unimplemented!("GDScript V1"),
         };
 
         let src = "
