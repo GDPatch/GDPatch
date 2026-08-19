@@ -193,7 +193,7 @@ impl PatcherCallbacks {
         Ok(tokens)
     }
 
-    pub fn has_patcher_for_script(&self, path: &String) -> bool {
+    pub fn has_patcher_for_script(&self, path: &str) -> bool {
         self.patch_script_as_text.contains_key(path) || self.patch_script_as_ast.contains_key(path)
     }
 

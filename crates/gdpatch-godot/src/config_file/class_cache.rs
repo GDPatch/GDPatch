@@ -8,7 +8,7 @@ use crate::{
 pub struct ClassCache(ConfigFile);
 
 impl ClassCache {
-    pub const CLASS_CACHE_PATH: &str = ".godot/global_script_class_cache.cfg";
+    pub const CLASS_CACHE_FILENAME: &str = "global_script_class_cache.cfg";
 
     pub fn parse(data: &str) -> ParseResult<Self> {
         Ok(Self(ConfigFile::parse(data)?))

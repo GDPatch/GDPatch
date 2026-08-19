@@ -2,22 +2,13 @@
 #![feature(seek_stream_len)]
 
 use color_eyre::eyre::{Context, ContextCompat, OptionExt, bail};
-use gdpatch_godot::config_file::class_cache::ClassCache;
-use gdpatch_godot::config_file::extension_list::ExtensionList;
-use gdpatch_godot::gdscript::parser::parse_to_tokens;
-use gdpatch_godot::gdscript::tokenizer::{
-    CompressMode, TokenizerBytecode, TokenizerText, reconstruct_script_binary,
-    reconstruct_script_text,
-};
-use gdpatch_godot::project_settings::ProjectSettings;
-use gdpatch_godot::variant::Variant;
 use memmap2::Mmap;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
-use tracing::{debug, debug_span, error, info, info_span, level_filters::LevelFilter, trace, warn};
+use tracing::{debug, debug_span, error, info, info_span, level_filters::LevelFilter, warn};
 use tracing_error::ErrorLayer;
 use tracing_subscriber::prelude::*;
 
@@ -26,17 +17,17 @@ mod config;
 mod intercept;
 mod ipc;
 mod mods;
+mod patch;
 mod virtual_pack;
 
 use crate::intercept::GDPatchStreamFactory;
 use crate::mods::lua::{ModLua, PatcherCallbacks};
 use crate::mods::{BUILTIN_MOD_ID, Mods};
-use crate::virtual_pack::builder::VirtualPackBuilder;
-use crate::virtual_pack::{FileContents, VirtualPack};
+use crate::patch::Patcher;
+use crate::virtual_pack::VirtualPack;
 pub use config::Config;
-use gdpatch_godot::build::{GDScriptBuild, VersionSpecifier, resolve_approximate_build};
+use gdpatch_godot::build::{VersionSpecifier, resolve_approximate_build};
 use gdpatch_godot::pack::{Pack, PackConfig};
-use gdpatch_godot::{ReadableMarshalBuffer, UIDCache, WritableMarshalBuffer};
 
 static INSTANCE: OnceLock<GDPatch> = OnceLock::new();
 
@@ -261,44 +252,48 @@ impl GDPatch {
         let _entered = debug_span!("create_pack", original = %path.display()).entered();
         debug!("creating virtual pack");
 
+        let old_pack = Arc::new(old_pack);
         let mapping = unsafe { Mmap::map(&file).expect("failed to mmap pack") };
         let mapping = Arc::new(mapping);
 
-        assert!(old_pack.deltas.is_empty());
-        let mut builder = VirtualPackBuilder::new(&old_pack);
-
+        // Initialize mod patcher callbacks.
         let mut patchers = Vec::new();
-        let mut callbacks = PatcherCallbacks::default();
-        let old_pack = Arc::new(old_pack);
+        let callbacks = {
+            let mut callbacks = PatcherCallbacks::default();
 
-        {
-            let mods = self.mods.read();
-            let mods = mods.as_ref().expect("mods should have been initialized");
+            {
+                let mods = self.mods.read();
+                let mods = mods.as_ref().expect("mods should have been initialized");
 
-            // Initialize mod patcher callbacks.
-            for r#mod in mods.0.values() {
-                let _entered = info_span!("patcher_setup", mod = %r#mod.info.id).entered();
+                for r#mod in mods.0.values() {
+                    let _entered = info_span!("patcher_setup", mod = %r#mod.info.id).entered();
 
-                if let Some(patcher) = &r#mod.patcher {
-                    match ModLua::new(patcher, r#mod.info.id.clone()) {
-                        Ok(patcher) => patchers.push(patcher),
-                        Err(error) => {
-                            error!(?error, "failed to create patcher")
-                        }
+                    if let Some(patcher) = &r#mod.patcher {
+                        let patcher = match ModLua::new(patcher, r#mod.info.id.clone()) {
+                            Ok(patcher) => patcher,
+                            Err(error) => {
+                                error!(?error, "failed to create patcher");
+                                continue;
+                            }
+                        };
+
+                        patchers.push(patcher);
                     }
                 }
             }
-        }
 
-        for patcher in &patchers {
-            let old_pack = Arc::downgrade(&old_pack);
-            let _entered = info_span!("patcher", mod = %patcher.mod_id).entered();
+            for patcher in &patchers {
+                let old_pack = Arc::downgrade(&old_pack);
+                let _entered = info_span!("patcher", mod = %patcher.mod_id).entered();
 
-            match patcher.run(old_pack, path.clone()) {
-                Ok(mod_callbacks) => callbacks.merge(mod_callbacks),
-                Err(err) => error!(?err, mod_id = patcher.mod_id, "failed to run patcher"),
+                match patcher.run(old_pack, path.clone()) {
+                    Ok(mod_callbacks) => callbacks.merge(mod_callbacks),
+                    Err(err) => error!(?err, mod_id = patcher.mod_id, "failed to run patcher"),
+                }
             }
-        }
+
+            callbacks
+        };
 
         // Resolve engine build.
         let engine_build = {
@@ -311,363 +306,21 @@ impl GDPatch {
             );
 
             let custom_engine = self.config.engine.clone().map(|e| e.engine);
-            let engine_build = resolve_approximate_build(pack_version, custom_engine)
+            let engine_build = resolve_approximate_build(pack_version.clone(), custom_engine)
                 .expect("failed to resolve engine build");
             info!(version = %engine_build.version, "using engine build");
 
             if engine_build.version.minor != old_pack.engine_version.1
                 || engine_build.version.patch != old_pack.engine_version.2
             {
-                let pack_version = format!(
-                    "{}.{}.{}",
-                    old_pack.engine_version.0, old_pack.engine_version.1, old_pack.engine_version.2
-                );
-                warn!(pack = pack_version, resolved = %engine_build.version, "unsupported engine minor/patch version - you may encounter issues");
+                warn!(pack = %pack_version, resolved = %engine_build.version, "unsupported engine minor/patch version - you may encounter issues");
             }
 
             engine_build.clone()
         };
-        let strip_path_prefix = |path: &str| {
-            if engine_build.has_prefixless_pck_paths {
-                path.to_string()
-            } else {
-                path.strip_prefix("res://").unwrap_or(path).to_string()
-            }
-        };
-        let ensure_path_prefix = |path: &str| {
-            if engine_build.has_prefixless_pck_paths {
-                path.strip_prefix("res://").unwrap_or(path).to_string()
-            } else {
-                if path.starts_with("res://") {
-                    path.to_string()
-                } else {
-                    format!("res://{}", path)
-                }
-            }
-        };
 
-        let gdscript_build = match &engine_build.gdscript {
-            GDScriptBuild::V2(v2) => v2,
-            _ => unimplemented!("GDScript V1"),
-        };
-
-        let project_settings = {
-            let path = ensure_path_prefix(ProjectSettings::PROJECT_SETTINGS_PATH);
-
-            let file = old_pack
-                .files
-                .get(&path)
-                .expect("project settings file is missing");
-
-            let contents = FileContents::Disk {
-                mapping: mapping.clone(),
-                offset: file.offset,
-                len: file.size,
-            };
-
-            let slice = contents.as_slice();
-
-            let mut buf = ReadableMarshalBuffer::new(slice, true);
-            ProjectSettings::parse_binary(&mut buf).expect("failed to parse project settings")
-        };
-
-        let real_t_is_double = project_settings
-            .inner
-            .get("application/config/features")
-            .map(|p| match p {
-                Variant::PackedStringArray(array) => array.iter().any(|f| f == "Double Precision"),
-                _ => false,
-            })
-            .unwrap_or_default();
-
-        let mut uid_cache = UIDCache::default();
-        let mut class_cache = ClassCache::default();
-        let mut extension_list = ExtensionList::default();
-
-        // Rebuild files in the virtual pack.
-        for (path, file) in &old_pack.files {
-            let normalized_path = strip_path_prefix(path);
-            let _entered = info_span!("pack_entry", path = %normalized_path).entered();
-
-            let contents = FileContents::Disk {
-                mapping: mapping.clone(),
-                offset: file.offset,
-                len: file.size,
-            };
-            let slice = contents.as_slice();
-
-            // Patch scripts.
-            let result = try {
-                if self.config.debug.patch_all_scripts
-                    || callbacks.has_patcher_for_script(&normalized_path)
-                {
-                    let script: Option<(Vec<_>, bool)> = if path.ends_with(".gd") {
-                        let source = str::from_utf8(slice).wrap_err("failed to parse utf8")?;
-                        let mut tokenizer = TokenizerText::new(gdscript_build, source);
-                        let mut tokens = parse_to_tokens(&mut tokenizer)?;
-
-                        if self.config.debug.patch_all_scripts {
-                            let source = reconstruct_script_text(&tokens);
-                            let mut tokenizer = TokenizerText::new(gdscript_build, &source);
-                            tokens = parse_to_tokens(&mut tokenizer)?;
-                        }
-
-                        Some((tokens, false))
-                    } else if path.ends_with(".gdc") {
-                        let mut tokenizer = TokenizerBytecode::new(gdscript_build, slice)
-                            .wrap_err("failed to parse bytecode")?;
-
-                        let mut tokens = parse_to_tokens(&mut tokenizer)?;
-
-                        if self.config.debug.patch_all_scripts {
-                            let source = reconstruct_script_text(&tokens);
-
-                            let mut tokenizer = TokenizerText::new(gdscript_build, &source);
-                            tokens = parse_to_tokens(&mut tokenizer)?;
-                        }
-
-                        Some((tokens, true))
-                    } else {
-                        None
-                    };
-
-                    if let Some((tokens, is_binary)) = script {
-                        match callbacks.patch_script(&normalized_path, tokens, gdscript_build) {
-                            Ok(mut patched_tokens) => {
-                                let patched_data = if is_binary {
-                                    if self.config.debug.patch_all_scripts {
-                                        let reconstructed = reconstruct_script_binary(
-                                            gdscript_build,
-                                            &patched_tokens,
-                                            CompressMode::None,
-                                            real_t_is_double,
-                                        )
-                                        .wrap_err("failed to reconstruct script as binary")?;
-
-                                        let mut tokenizer =
-                                            TokenizerBytecode::new(gdscript_build, &reconstructed)
-                                                .wrap_err("failed to reparse bytecode")?;
-                                        patched_tokens = parse_to_tokens(&mut tokenizer)?;
-                                    }
-
-                                    reconstruct_script_binary(
-                                        gdscript_build,
-                                        &patched_tokens,
-                                        CompressMode::None,
-                                        real_t_is_double,
-                                    )
-                                    .wrap_err("failed to reconstruct binary script")?
-                                } else {
-                                    let content = reconstruct_script_text(&patched_tokens);
-                                    content.into_bytes()
-                                };
-
-                                builder.add_file(
-                                    path.clone(),
-                                    patched_data.len() as u64,
-                                    file.hash,
-                                    FileContents::Memory(patched_data),
-                                );
-
-                                continue;
-                            }
-                            Err(err) => error!(?err, "failed to patch script"),
-                        };
-                    }
-                }
-            };
-
-            if let Err(err) = result {
-                error!(?err, "failed to patch script");
-            }
-
-            // Merge special files. The fully merged files are added later.
-            if normalized_path == UIDCache::UID_CACHE_PATH {
-                let mut buffer = ReadableMarshalBuffer::new(slice, true);
-                if let Err(err) = uid_cache.merge_decode(&mut buffer) {
-                    error!(?err, "failed to decode UID cache");
-                }
-
-                continue;
-            }
-
-            if normalized_path == ClassCache::CLASS_CACHE_PATH {
-                let result = try {
-                    let str = str::from_utf8(slice).wrap_err("failed to decode string")?;
-                    class_cache
-                        .merge_decode(str)
-                        .map_err(|e| color_eyre::eyre::eyre!(e.0))
-                        .wrap_err("failed to decode class cache")?;
-                };
-
-                if let Err(err) = result {
-                    error!(?err, "failed to merge class cache");
-                }
-
-                continue;
-            }
-
-            if normalized_path == ExtensionList::EXTENSION_LIST_PATH {
-                let result = try {
-                    let str = str::from_utf8(slice).wrap_err("failed to decode string")?;
-                    extension_list.merge_decode(str)
-                };
-
-                if let Err(err) = result {
-                    error!(?err, "failed to merge extension list");
-                }
-
-                continue;
-            }
-
-            // Preserve the original file.
-            builder.add_file(path.clone(), file.size, file.hash, contents);
-        }
-
-        // Insert modded .pck files.
-        // TODO: mod order, maybe?
-        {
-            let mods = self.mods.read();
-            let mods = mods.as_ref().expect("mods should have been initialized");
-            for (mod_id, r#mod) in &mods.0 {
-                let _entered = info_span!("mod_pack", %mod_id).entered();
-
-                let mod_pack = match &r#mod.pack {
-                    Some(mod_pack) => mod_pack,
-                    None => continue,
-                };
-
-                for (mut path, contents) in mod_pack.files() {
-                    let _entered = info_span!("mod_pack_entry", path = %path).entered();
-
-                    // Add/remove res:// prefix if required.
-                    path = ensure_path_prefix(&path);
-                    let normalized_path = strip_path_prefix(&path);
-
-                    let exists_in_old = old_pack.files.contains_key(&path);
-                    let is_script = path.ends_with(".gd") || path.ends_with(".gdc");
-
-                    // Disallow replacing scripts directly.
-                    if exists_in_old && is_script {
-                        warn!("cannot replace game script in mod pack");
-                        continue;
-                    }
-
-                    // Always skip project settings that were accidentally included by the editor.
-                    if normalized_path == ProjectSettings::PROJECT_SETTINGS_PATH {
-                        warn!("skipping project settings file in mod pack");
-                        continue;
-                    }
-
-                    // Merge special files. The fully merged files are added later.
-                    if normalized_path == UIDCache::UID_CACHE_PATH {
-                        let mut buffer = ReadableMarshalBuffer::new(contents.as_slice(), true);
-                        if let Err(err) = uid_cache.merge_decode(&mut buffer) {
-                            error!(?err, "failed to decode UID cache");
-                        }
-                        continue;
-                    }
-
-                    if normalized_path == ClassCache::CLASS_CACHE_PATH {
-                        let result = try {
-                            let str = str::from_utf8(contents.as_slice())
-                                .wrap_err("failed to decode string")?;
-                            class_cache
-                                .merge_decode(str)
-                                .map_err(|e| color_eyre::eyre::eyre!(e.0))
-                        };
-
-                        if let Err(err) = result {
-                            error!(?err, "failed to merge class cache");
-                        }
-
-                        continue;
-                    }
-
-                    if normalized_path == ExtensionList::EXTENSION_LIST_PATH {
-                        let result = try {
-                            let str = str::from_utf8(contents.as_slice())
-                                .wrap_err("failed to decode string")?;
-                            extension_list.merge_decode(str)
-                        };
-
-                        if let Err(err) = result {
-                            error!(?err, "failed to merge extension list");
-                        }
-
-                        continue;
-                    }
-
-                    trace!("adding modded file");
-                    builder.add_file(
-                        path.clone(),
-                        contents.len(),
-                        [0u8; 16], // TODO
-                        contents,
-                    );
-                }
-            }
-        }
-
-        // Patch (and overwrite) project settings.
-        // This is done later to enforce a consistent order of operations within the patcher script, making sure all scripts are patched beforehand.
-        {
-            let result = try {
-                match callbacks.patch_project_settings(project_settings.clone()) {
-                    Ok(patched_settings) => {
-                        let mut patched_data = WritableMarshalBuffer::new(false);
-                        patched_settings.encode(&mut patched_data)?;
-
-                        let patched_data = patched_data.into_inner();
-                        builder.add_file(
-                            ensure_path_prefix(ProjectSettings::PROJECT_SETTINGS_PATH),
-                            patched_data.len() as u64,
-                            [0u8; 16], // TODO
-                            FileContents::Memory(patched_data),
-                        );
-                    }
-                    Err(err) => error!(?err, "failed to patch project settings"),
-                }
-            };
-
-            if let Err(err) = result {
-                error!(?err, "failed to patch project settings");
-            }
-        }
-
-        // Save merged files.
-        {
-            let mut buffer = WritableMarshalBuffer::new(false);
-            uid_cache.encode(&mut buffer);
-            builder.add_file(
-                ensure_path_prefix(UIDCache::UID_CACHE_PATH),
-                buffer.len() as u64,
-                [0u8; 16], // TODO
-                FileContents::Memory(buffer.into_inner()),
-            );
-        }
-
-        {
-            let str = class_cache.write();
-            let buffer = str.as_bytes().to_vec();
-            builder.add_file(
-                ensure_path_prefix(ClassCache::CLASS_CACHE_PATH),
-                buffer.len() as u64,
-                [0u8; 16], // TODO
-                FileContents::Memory(buffer),
-            );
-        }
-
-        {
-            let str = extension_list.write();
-            let buffer = str.as_bytes().to_vec();
-            builder.add_file(
-                ensure_path_prefix(ExtensionList::EXTENSION_LIST_PATH),
-                buffer.len() as u64,
-                [0u8; 16], // TODO
-                FileContents::Memory(buffer),
-            );
-        }
+        let mods = self.mods.read();
+        let mods = mods.as_ref().expect("mods should have been initialized");
 
         let pack_config = self
             .config
@@ -675,10 +328,24 @@ impl GDPatch {
             .clone()
             .map(|e| e.pack)
             .unwrap_or_default();
-        let virtual_pack = Arc::new(builder.build(pack_config, header_pos_within_file));
+
+        let virtual_pack = Patcher::new(
+            &old_pack,
+            mapping,
+            engine_build,
+            &self.config,
+            callbacks,
+            mods,
+        )
+        .run()
+        .expect("failed to patch pack")
+        .build(pack_config, header_pos_within_file);
+        let virtual_pack = Arc::new(virtual_pack);
+
         self.virtual_packs
             .write()
             .insert(path, virtual_pack.clone());
+
         virtual_pack
     }
 }

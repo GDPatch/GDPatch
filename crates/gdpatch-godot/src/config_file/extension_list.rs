@@ -4,7 +4,7 @@
 pub struct ExtensionList(pub Vec<String>);
 
 impl ExtensionList {
-    pub const EXTENSION_LIST_PATH: &str = ".godot/extension_list.cfg";
+    pub const EXTENSION_LIST_FILENAME: &str = "extension_list.cfg";
 
     pub fn parse(data: &str) -> Self {
         Self(

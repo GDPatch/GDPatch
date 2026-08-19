@@ -8,7 +8,7 @@ pub struct UID(pub u64);
 pub struct UIDCache(pub Vec<(UID, String)>);
 
 impl UIDCache {
-    pub const UID_CACHE_PATH: &str = ".godot/uid_cache.bin";
+    pub const UID_CACHE_FILENAME: &str = "uid_cache.bin";
 
     pub fn decode(buffer: &mut ReadableMarshalBuffer) -> crate::Result<Self> {
         let count = buffer.decode_uint32()?;
