@@ -36,7 +36,8 @@ pub fn create_builtin_mod() -> color_eyre::Result<HashMap<String, Vec<u8>>> {
             name: Some("GDPatch".to_string()),
             version: Some(env!("CARGO_PKG_VERSION").to_string()),
             description: Some(env!("CARGO_PKG_DESCRIPTION").to_string()),
-            ..Default::default()
+            website: Some("https://gdpatch.dev/".to_string()),
+            authors: Vec::new(),
         }),
         config: None, // TODO
     };

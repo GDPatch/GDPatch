@@ -37,6 +37,9 @@ pub struct ModMeta {
 
     /// A short description of what this mod does.
     pub description: Option<String>,
+
+    /// A link to a website (such as mod page or source code) for this mod.
+    pub website: Option<String>,
 }
 
 /// Optional metadata for a mod's config section.
