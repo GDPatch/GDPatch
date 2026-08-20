@@ -43,7 +43,9 @@ use gdpatch_godot::{ReadableMarshalBuffer, UIDCache, WritableMarshalBuffer};
 static INSTANCE: OnceLock<GDPatch> = OnceLock::new();
 
 pub fn is_disabled() -> bool {
-    std::env::args_os().any(|arg| arg == "--gdpatch-disable")
+    std::env::var("GDPATCH_DISABLE")
+        .map(|e| e.parse::<bool>().unwrap_or_default() || e.parse::<u8>().unwrap_or_default() != 0)
+        .unwrap_or_else(|_| std::env::args_os().any(|arg| arg == "--gdpatch-disable"))
 }
 
 fn root_dir_from_args() -> Option<PathBuf> {
