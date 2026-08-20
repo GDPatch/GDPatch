@@ -121,7 +121,8 @@ impl IpcStream {
 
     fn submit_response(&mut self, seq: usize, data: IpcResponse) -> color_eyre::Result<()> {
         let data = Sequenced::<IpcResponse> { seq, data };
-        let str = serde_json::to_vec(&data)?;
+        let mut str = serde_json::to_vec(&data)?;
+        str.push(b'\n');
         self.queued_messages.push_back(str);
 
         Ok(())
