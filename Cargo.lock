@@ -432,7 +432,7 @@ dependencies = [
 
 [[package]]
 name = "filesilly"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "dunce",
  "libc",
@@ -457,7 +457,7 @@ checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 
 [[package]]
 name = "gdpatch"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "color-eyre",
  "documented",
@@ -482,7 +482,7 @@ dependencies = [
 
 [[package]]
 name = "gdpatch-godot"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "base64",
  "byteorder",
@@ -504,7 +504,7 @@ dependencies = [
 
 [[package]]
 name = "gdpatch-loader"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "color-eyre",
  "ctor",
