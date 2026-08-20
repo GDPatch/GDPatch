@@ -164,23 +164,24 @@ impl Read for PackStream {
                             return Ok(n);
                         }
 
-                        // On some platforms (Linux w/ self-contained .pcks), the magic is read one byte at a time.
-                        let possible_magic: Option<u32> = if n >= 4 {
-                            buf[..4].try_into().ok().map(u32::from_le_bytes)
-                        } else if offset + 4 < file_size {
-                            trace!("possible short read on magic");
-                            let offset_after_read = file.stream_position()?;
+                        let possible_magic: Option<u32> = if offset + 4 < file_size {
+                            if n >= 4 {
+                                buf[..4].try_into().ok().map(u32::from_le_bytes)
+                            } else {
+                                // On some platforms (Linux w/ self-contained .pcks), the magic is read one byte at a time.
+                                let offset_after_read = file.stream_position()?;
 
-                            file.seek(SeekFrom::Start(offset))?;
-                            let mut buf = [0u8; 4];
-                            let result = match file.read_exact(&mut buf[..]) {
-                                Ok(()) => Some(u32::from_le_bytes(buf)),
-                                Err(_) => None,
-                            };
+                                file.seek(SeekFrom::Start(offset))?;
+                                let mut buf = [0u8; 4];
+                                let result = match file.read_exact(&mut buf[..]) {
+                                    Ok(()) => Some(u32::from_le_bytes(buf)),
+                                    Err(_) => None,
+                                };
 
-                            file.seek(SeekFrom::Start(offset_after_read))?;
+                                file.seek(SeekFrom::Start(offset_after_read))?;
 
-                            result
+                                result
+                            }
                         } else {
                             None
                         };
@@ -208,6 +209,7 @@ impl Read for PackStream {
                                     file.seek(SeekFrom::Start(offset + n as u64))?;
                                     warn!(
                                         ?err,
+                                        offset,
                                         path = %path.display(),
                                         "failed to parse likely PCK file"
                                     );
