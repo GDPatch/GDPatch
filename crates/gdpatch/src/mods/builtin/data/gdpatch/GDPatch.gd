@@ -48,12 +48,14 @@ func _send_command_with_response(req):
 func _send_command(req):
   var str = JSON.stringify(req)
   self.mutex.lock()
-  self.file.store_line(str)
+  self.file.store_line(str + "\n")
+  self.file.flush()
   self.mutex.unlock()
 
 func _read_response():
   self.mutex.lock()
   var str = self.file.get_line()
+  self.file.flush()
   self.mutex.unlock()
   if str == "": return
   var obj = JSON.parse_string(str)
