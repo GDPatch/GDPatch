@@ -384,6 +384,25 @@ impl<'a> Patcher<'a> {
                 }
             }
 
+            if self.callbacks.has_patcher_for_file(&normalized_path) {
+                match self.callbacks.patch_file(&normalized_path, slice) {
+                    Ok(patched_data) => {
+                        self.new_pack.add_file(
+                            path.clone(),
+                            patched_data.len() as u64,
+                            file.hash,
+                            FileContents::Memory(patched_data),
+                        );
+
+                        continue;
+                    }
+
+                    Err(err) => {
+                        error!(err = %err, "failed to patch file");
+                    }
+                }
+            }
+
             // Preserve the original file.
             trace!("adding game file");
             self.new_pack

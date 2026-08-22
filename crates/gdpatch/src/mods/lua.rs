@@ -11,11 +11,11 @@ use gdpatch_godot::{
 };
 use indexmap::IndexMap;
 use mlua::{
-    FromLua, Function, IntoLua, Lua, LuaSerdeExt, MultiValue, ObjectLike, Table, UserData,
+    BString, FromLua, Function, IntoLua, Lua, LuaSerdeExt, MultiValue, ObjectLike, Table, UserData,
     UserDataMethods, Value, WeakLua,
 };
 use serde::Deserialize;
-use std::{cmp::Ordering, collections::HashMap, path::PathBuf, sync::Weak};
+use std::{cmp::Ordering, collections::HashMap, ops::DerefMut, path::PathBuf, sync::Weak};
 use tracing::{error, info, info_span, warn};
 
 use crate::{GDPatch, bindings::LuaVariant};
@@ -134,6 +134,7 @@ pub type PatcherCallbackMap = HashMap<String, Vec<PatcherCallback>>;
 pub struct PatcherCallbacks {
     patch_script_as_text: PatcherCallbackMap,
     patch_script_as_ast: PatcherCallbackMap,
+    patch_file: PatcherCallbackMap,
     patch_project_settings: Vec<PatcherCallback>,
 }
 
@@ -170,6 +171,7 @@ impl PatcherCallbacks {
 
         merge_one(&mut self.patch_script_as_text, &other.patch_script_as_text);
         merge_one(&mut self.patch_script_as_ast, &other.patch_script_as_ast);
+        merge_one(&mut self.patch_file, &other.patch_file);
 
         self.patch_project_settings
             .extend(other.patch_project_settings);
@@ -323,6 +325,44 @@ impl PatcherCallbacks {
 
         Ok(settings)
     }
+
+    pub fn has_patcher_for_file(&self, path: &str) -> bool {
+        self.patch_file.contains_key(path)
+    }
+
+    pub fn patch_file(&self, path: &str, input: &[u8]) -> color_eyre::Result<Vec<u8>> {
+        let mut data = BString::from(input);
+        if let Some(funcs) = self.patch_file.get(path) {
+            for PatcherCallback {
+                lua,
+                function,
+                mod_id,
+                ..
+            } in funcs
+            {
+                let _entered = info_span!("patcher", mod = %mod_id, type = "file_text").entered();
+                let lua = lua.upgrade();
+
+                let context = lua.create_table()?;
+                context.set("path", path)?;
+
+                data = match function.call::<BString>((context, data.clone())) {
+                    Ok(new_data) => {
+                        if data == new_data {
+                            warn!("patcher returned identical output");
+                        }
+                        new_data
+                    }
+                    Err(err) => {
+                        error!(%err, "failed to run patcher callback");
+                        data
+                    }
+                };
+            }
+        }
+
+        Ok(data.to_vec())
+    }
 }
 
 /// Wrapper for Lua paths to either accept a string or table of strings.
@@ -451,69 +491,46 @@ impl UserData for GDPatchLuaGlobal {
             Ok(table)
         });
 
-        methods.add_function(
-            "patch_script_as_text",
-            |lua, (paths, function, options): (PatcherPaths, Function, Value)| {
-                let options = if options.is_nil() {
-                    PatcherCallbackOptions::default()
-                } else {
-                    lua.from_value::<PatcherCallbackOptions>(options)?
-                };
+        let mut add_patcher =
+            |name: &'static str, get_callbacks: fn(&mut ModLuaState) -> &mut PatcherCallbackMap| {
+                methods.add_function(
+                    name,
+                    move |lua, (paths, function, options): (PatcherPaths, Function, Value)| {
+                        let options = if options.is_nil() {
+                            PatcherCallbackOptions::default()
+                        } else {
+                            lua.from_value::<PatcherCallbackOptions>(options)?
+                        };
 
-                let mut state = lua
-                    .app_data_mut::<ModLuaState>()
-                    .expect("runtime state should be available");
-                let mod_id = state.mod_id.clone();
+                        let mut state = lua
+                            .app_data_mut::<ModLuaState>()
+                            .expect("runtime state should be available");
+                        let mod_id = state.mod_id.clone();
 
-                for path in paths.0.iter() {
-                    state
-                        .callbacks
-                        .patch_script_as_text
-                        .entry(path.clone())
-                        .or_insert_with(Vec::new)
-                        .push(PatcherCallback {
-                            lua: lua.weak(),
-                            function: function.clone(),
-                            options: options.clone(),
-                            mod_id: mod_id.clone(),
-                        });
-                }
+                        for path in paths.0.iter() {
+                            get_callbacks(state.deref_mut())
+                                .entry(path.clone())
+                                .or_default()
+                                .push(PatcherCallback {
+                                    lua: lua.weak(),
+                                    function: function.clone(),
+                                    options: options.clone(),
+                                    mod_id: mod_id.clone(),
+                                });
+                        }
 
-                Ok(())
-            },
-        );
+                        Ok(())
+                    },
+                )
+            };
 
-        methods.add_function(
-            "patch_script_as_ast",
-            |lua, (paths, function, options): (PatcherPaths, Function, Value)| {
-                let options = if options.is_nil() {
-                    PatcherCallbackOptions::default()
-                } else {
-                    lua.from_value::<PatcherCallbackOptions>(options)?
-                };
-
-                let mut state = lua
-                    .app_data_mut::<ModLuaState>()
-                    .expect("runtime state should be available");
-                let mod_id = state.mod_id.clone();
-
-                for path in paths.0.iter() {
-                    state
-                        .callbacks
-                        .patch_script_as_ast
-                        .entry(path.clone())
-                        .or_insert_with(Vec::new)
-                        .push(PatcherCallback {
-                            lua: lua.weak(),
-                            function: function.clone(),
-                            options: options.clone(),
-                            mod_id: mod_id.clone(),
-                        });
-                }
-
-                Ok(())
-            },
-        );
+        add_patcher("patch_script_as_text", |s| {
+            &mut s.callbacks.patch_script_as_text
+        });
+        add_patcher("patch_script_as_ast", |s| {
+            &mut s.callbacks.patch_script_as_ast
+        });
+        add_patcher("patch_file", |s| &mut s.callbacks.patch_file);
 
         methods.add_function(
             "patch_project_settings",
