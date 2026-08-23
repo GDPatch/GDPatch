@@ -29,10 +29,6 @@ func _ready() -> void:
     if mod_id != BUILTIN_MOD:
       self._load_mod(mod_id)
 
-func _process(_delta: float) -> void:
-  var data = self._read_response()
-  if data != null: print(data)
-
 func _send_command_with_response(req):
   var this_seq = seq
   req["seq"] = this_seq
