@@ -6,9 +6,6 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/gdpatch-godot/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/gdpatch-loader/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/gdpatch/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/crates/gdpatch-godot/difftest/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/crates/gdpatch-loader-linux/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/crates/gdpatch-loader-windows/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/gdpatch-godot/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
