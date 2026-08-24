@@ -384,7 +384,7 @@ impl<'a> Patcher<'a> {
                 }
             }
 
-            if self.callbacks.has_patcher_for_file(&normalized_path) {
+            if !is_script && self.callbacks.has_patcher_for_file(&normalized_path) {
                 match self.callbacks.patch_file(&normalized_path, slice) {
                     Ok(patched_data) => {
                         self.new_pack.add_file(
