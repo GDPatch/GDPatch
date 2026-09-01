@@ -164,7 +164,9 @@ impl Write for IpcStream {
             let line = &str[..pos];
             let line = line.to_owned();
 
-            if let Err(err) = self.process_command(&line) {
+            if !line.is_empty()
+                && let Err(err) = self.process_command(&line)
+            {
                 tracing::error!(err = %err, line, "failed to process ipc command");
             }
 
