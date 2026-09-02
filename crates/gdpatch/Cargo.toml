@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 filesilly.workspace = true
 gdpatch-godot.workspace = true
+gdpatch-dotnet = { workspace = true, optional = true }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender.workspace = true
@@ -26,3 +27,6 @@ indexmap.workspace = true
 ordered-float.workspace = true
 include_dir.workspace = true
 color-eyre.workspace = true
+
+[features]
+dotnet = ["dep:gdpatch-dotnet"]

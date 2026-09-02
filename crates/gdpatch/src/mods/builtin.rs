@@ -32,6 +32,7 @@ pub fn create_builtin_mod() -> color_eyre::Result<HashMap<String, Vec<u8>>> {
 
     let mod_info = ModInfo {
         id: BUILTIN_MOD_ID.to_string(),
+        dotnet_assembly: None,
         meta: Some(ModMeta {
             name: Some("GDPatch".to_string()),
             version: Some(env!("CARGO_PKG_VERSION").to_string()),
