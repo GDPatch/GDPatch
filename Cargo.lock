@@ -531,6 +531,7 @@ dependencies = [
  "documented",
  "figment",
  "filesilly",
+ "gdpatch-dotnet",
  "gdpatch-godot",
  "include_dir",
  "indexmap",
@@ -546,6 +547,18 @@ dependencies = [
  "tracing-appender",
  "tracing-error",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "gdpatch-dotnet"
+version = "0.2.4"
+dependencies = [
+ "filesilly",
+ "include_dir",
+ "retour",
+ "thiserror 2.0.12",
+ "widestring",
+ "windows",
 ]
 
 [[package]]
@@ -1759,6 +1772,12 @@ dependencies = [
  "rustix",
  "winsafe",
 ]
+
+[[package]]
+name = "widestring"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471"
 
 [[package]]
 name = "winapi"
