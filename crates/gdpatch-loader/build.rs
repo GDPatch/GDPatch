@@ -70,6 +70,12 @@ fn main() -> color_eyre::Result<()> {
 
     if env::var_os("CARGO_CFG_WINDOWS").is_some() {
         generate_exports_file()?;
+
+        let target_env = env::var("CARGO_CFG_TARGET_ENV");
+        if Ok("msvc") == target_env.as_deref() {
+            // symbols.o : warning LNK4104: export of symbol 'DllGetClassObject' should be PRIVATE
+            println!("cargo:rustc-link-arg=/ignore:4104");
+        }
     }
 
     Ok(())
