@@ -26,7 +26,7 @@ tracing-error = "0.2.1"
 
 base64 = "0.23.1"
 byteorder = "1.5.0"
-dunce = "1.0.5"
+dashmap = "6.2.1"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.149"
 figment = { version = "0.10.19", features = ["toml", "env"] }
@@ -49,6 +49,7 @@ once_cell = "1.21.4"
 aes = "0.8.4"
 cfb-mode = "0.8.2"
 md-5 = "0.10.6"
+identity-hash = "0.1.0"
 
 windows = { version = "0.62.2", features = [
   "Win32_System_SystemServices",

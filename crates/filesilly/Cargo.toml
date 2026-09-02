@@ -14,7 +14,8 @@ parking_lot.workspace = true
 [target.'cfg(windows)'.dependencies]
 windows.workspace = true
 retour.workspace = true
-dunce.workspace = true
+dashmap.workspace = true
+identity-hash.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 retour.workspace = true
