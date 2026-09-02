@@ -49,6 +49,7 @@ pub enum IpcResponse {
     ConfigOption { value: Option<toml::Value> },
 }
 
+#[derive(Debug)]
 pub struct IpcStream {
     queued_messages: VecDeque<Vec<u8>>,
     read_buffer: Option<Cursor<Vec<u8>>>,

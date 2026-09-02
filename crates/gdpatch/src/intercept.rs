@@ -2,7 +2,7 @@
 use crate::GDPatch;
 use crate::virtual_pack::VirtualPack;
 use color_eyre::eyre::eyre;
-use filesilly::{Stream, StreamFactory};
+use filesilly::{HeapStream, Stream, StreamFactory};
 use gdpatch_godot::pack::{Pack, PackConfig};
 use std::env::{current_dir, current_exe};
 use std::fs::File;
@@ -10,6 +10,7 @@ use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{io, mem};
+use parking_lot::Mutex;
 use tracing::{debug, error, trace, warn};
 
 /// An open handle to a virtual pack. Stores a seek position and forwards reads to the inner pack.
@@ -309,14 +310,15 @@ impl Stream for PackStream {}
 pub struct GDPatchStreamFactory(pub PackConfig);
 
 impl StreamFactory for GDPatchStreamFactory {
-    fn create_stream(&mut self, path: &Path) -> io::Result<Option<Box<dyn Stream>>> {
+    fn create_stream(&self, path: &Path) -> io::Result<Option<HeapStream>> {
         // Redirect to the IPC stream if needed.
         if path == crate::ipc::IPC_FILENAME
             || current_dir()
                 .map(|d| path == d.join(crate::ipc::IPC_FILENAME))
                 .unwrap_or_default()
         {
-            return Ok(Some(Box::new(crate::ipc::IpcStream::new())));
+            let stream = crate::ipc::IpcStream::new();
+            return Ok(Some(Arc::new(Mutex::new(stream))));
         }
 
         let gdpatch = GDPatch::instance();
@@ -331,7 +333,7 @@ impl StreamFactory for GDPatchStreamFactory {
         if let Some(pack) = gdpatch.get_virtual_pack(path) {
             // Path is a known pack file, just return a reference to its virtual pack.
             let stream = PackStream::new_virtual(pack);
-            return Ok(Some(Box::new(stream)));
+            return Ok(Some(Arc::new(Mutex::new(stream))));
         }
 
         // Godot will try and read a pack from either the executable itself, or from a separate
@@ -342,7 +344,8 @@ impl StreamFactory for GDPatchStreamFactory {
         if asked_for_pck || asked_for_exe {
             let file = File::open(path)?;
             let path = path.to_owned();
-            return Ok(Some(Box::new(PackStream::new(path, file, self.0.clone()))));
+            let stream = PackStream::new(path, file, self.0.clone());
+            return Ok(Some(Arc::new(Mutex::new(stream))));
         }
 
         Ok(None)
