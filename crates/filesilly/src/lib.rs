@@ -7,35 +7,34 @@ use std::path::Path;
 use std::sync::{Arc, OnceLock};
 use thiserror::Error;
 
+mod hook;
 mod os;
 mod recursion_guard;
-mod hook;
 
-static INSTANCE: OnceLock<FileSilly> = OnceLock::new();
+static INSTANCE: OnceLock<Filesilly> = OnceLock::new();
 
 pub type HeapStream = Arc<Mutex<dyn Stream>>;
 
 #[derive(Debug)]
-struct FileSilly {
-    platform: os::FileSillyPlatform,
+struct Filesilly {
+    platform: os::FilesillyPlatform,
     factory: Box<dyn StreamFactory>,
 }
 
-impl FileSilly {
-    pub(crate) fn setup(platform: os::FileSillyPlatform, factory: Box<dyn StreamFactory>) {
-        let instance = Self {
-            platform,
-            factory,
-        };
+impl Filesilly {
+    pub(crate) fn setup(platform: os::FilesillyPlatform, factory: Box<dyn StreamFactory>) {
+        let instance = Self { platform, factory };
 
         INSTANCE.set(instance).expect("called init() twice");
     }
 
-    pub fn instance() -> &'static FileSilly {
-        INSTANCE.get().expect("tried to get filesilly instance before `init`")
+    pub fn instance() -> &'static Filesilly {
+        INSTANCE
+            .get()
+            .expect("tried to get filesilly instance before `init`")
     }
 
-    pub fn platform() -> &'static os::FileSillyPlatform {
+    pub fn platform() -> &'static os::FilesillyPlatform {
         let instance = Self::instance();
         &instance.platform
     }

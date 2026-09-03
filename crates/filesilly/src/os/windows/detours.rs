@@ -1,8 +1,8 @@
-use crate::os::windows::util::{io_error_to_status, normalize_unicode_string_path};
-use crate::os::windows::{util, WrappedHandle};
 use crate::hook::{LockDetour, SillyHook};
+use crate::os::windows::util::{io_error_to_status, normalize_unicode_string_path};
+use crate::os::windows::{WrappedHandle, util};
 use crate::recursion_guard::RecursionGuard;
-use crate::{FileSilly, HeapStream, Stream};
+use crate::{Filesilly, HeapStream, Stream};
 use std::ffi::OsString;
 use std::io::SeekFrom;
 use std::os::raw::{c_ulong, c_void};
@@ -13,10 +13,10 @@ use std::{io, slice};
 use tracing::{error, field, trace, trace_span, warn};
 use windows::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows::Wdk::Storage::FileSystem::{
-    FileBasicInformation, FileFsDeviceInformation, FileFsFullSizeInformationEx,
-    FileFsSizeInformation, FileFsVolumeInformation, FilePositionInformation, FileStandardInformation,
     FILE_BASIC_INFORMATION, FILE_INFORMATION_CLASS, FILE_POSITION_INFORMATION,
-    FILE_STANDARD_INFORMATION, FS_INFORMATION_CLASS,
+    FILE_STANDARD_INFORMATION, FS_INFORMATION_CLASS, FileBasicInformation, FileFsDeviceInformation,
+    FileFsFullSizeInformationEx, FileFsSizeInformation, FileFsVolumeInformation,
+    FilePositionInformation, FileStandardInformation,
 };
 use windows::Wdk::System::SystemServices::{
     FILE_FS_DEVICE_INFORMATION, FILE_FS_FULL_SIZE_INFORMATION_EX, FILE_FS_SIZE_INFORMATION,
@@ -27,8 +27,8 @@ use windows::Win32::Foundation::{
     STATUS_INVALID_INFO_CLASS, STATUS_INVALID_PARAMETER, STATUS_SUCCESS,
 };
 use windows::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_NORMAL, FILE_DEVICE_DISK};
-use windows::Win32::System::WindowsProgramming::FILE_OPENED;
 use windows::Win32::System::IO::{IO_STATUS_BLOCK, PIO_APC_ROUTINE};
+use windows::Win32::System::WindowsProgramming::FILE_OPENED;
 
 type NtCreateFileFn = unsafe extern "system" fn(
     handle: *mut HANDLE,
@@ -150,12 +150,12 @@ unsafe fn create_file_handler(
     };
 
     // Path should always be shaped like an NT object manager path now.
-    let base_path = &FileSilly::platform().base_path_nt;
+    let base_path = &Filesilly::platform().base_path_nt;
     let relative_path = path.strip_prefix(&base_path[..])?;
     let relative_path = PathBuf::from(OsString::from_wide(relative_path));
-    let fixed_path = FileSilly::platform().base_path.join(&relative_path);
+    let fixed_path = Filesilly::platform().base_path.join(&relative_path);
 
-    let result = FileSilly::factory().create_stream(&fixed_path);
+    let result = Filesilly::factory().create_stream(&fixed_path);
 
     let stream = match result {
         Ok(None) => return None,
@@ -168,7 +168,7 @@ unsafe fn create_file_handler(
     };
 
     Some(
-        match FileSilly::platform().allocate_handle_for_stream(stream) {
+        match Filesilly::platform().allocate_handle_for_stream(stream) {
             Ok(handle) => Ok(handle.0),
             Err(err) => {
                 error!(?err, "failed to generate fake handle");
@@ -189,7 +189,7 @@ unsafe extern "system" fn close_handle_detour(handle: HANDLE) -> NTSTATUS {
     );
     let _entered = span.enter();
 
-    let platform = FileSilly::platform();
+    let platform = Filesilly::platform();
 
     if let Some((_, stream)) = platform.handles.remove(&WrappedHandle(handle)) {
         trace!("closed handle");
@@ -342,7 +342,7 @@ unsafe fn read_write_file_handler<F>(
 where
     F: FnOnce(&mut dyn Stream, &mut [u8]) -> io::Result<usize>,
 {
-    let stream = FileSilly::platform().get_stream(handle)?;
+    let stream = Filesilly::platform().get_stream(handle)?;
 
     // TODO: currently none of these get triggered but they could in theory
     if apc_routine.is_some() {
@@ -498,7 +498,7 @@ unsafe fn set_information_file_handler(
     length: u64,
     class: FILE_INFORMATION_CLASS,
 ) -> Option<(NTSTATUS, usize)> {
-    let stream = FileSilly::platform().get_stream(handle)?;
+    let stream = Filesilly::platform().get_stream(handle)?;
 
     unsafe {
         #[allow(non_upper_case_globals)]
@@ -583,7 +583,7 @@ unsafe fn query_information_file_handler(
     length: u64,
     class: FILE_INFORMATION_CLASS,
 ) -> Option<(NTSTATUS, usize)> {
-    let stream = FileSilly::platform().get_stream(handle)?;
+    let stream = Filesilly::platform().get_stream(handle)?;
 
     unsafe {
         #[allow(non_upper_case_globals)]
@@ -703,7 +703,7 @@ unsafe fn query_volume_information_file_handler(
     length: u64,
     class: FS_INFORMATION_CLASS,
 ) -> Option<(NTSTATUS, usize)> {
-    let stream = FileSilly::platform().get_stream(handle)?;
+    let stream = Filesilly::platform().get_stream(handle)?;
 
     unsafe {
         #[allow(non_upper_case_globals)]
