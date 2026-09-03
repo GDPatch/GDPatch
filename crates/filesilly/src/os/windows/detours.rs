@@ -153,9 +153,8 @@ unsafe fn create_file_handler(
     let base_path = &Filesilly::platform().base_path_nt;
     let relative_path = path.strip_prefix(&base_path[..])?;
     let relative_path = PathBuf::from(OsString::from_wide(relative_path));
-    let fixed_path = Filesilly::platform().base_path.join(&relative_path);
-
-    let result = Filesilly::factory().create_stream(&fixed_path);
+    let absolute_path = Filesilly::platform().base_path.join(&relative_path);
+    let result = Filesilly::factory().create_stream(&absolute_path);
 
     let stream = match result {
         Ok(None) => return None,
@@ -329,6 +328,7 @@ unsafe extern "system" fn write_file_detour(
     status
 }
 
+#[allow(clippy::too_many_arguments)]
 unsafe fn read_write_file_handler<F>(
     handle: HANDLE,
     event_handle: HANDLE,
