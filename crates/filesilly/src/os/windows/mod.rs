@@ -47,6 +47,15 @@ impl From<HANDLE> for WrappedHandle {
 }
 
 #[derive(Debug)]
+struct BasePath {
+    /// NT object manager format path.
+    nt: Vec<u16>,
+
+    /// Base directory as passed to the initializer.
+    rust: PathBuf,
+}
+
+#[derive(Debug)]
 pub struct FilesillyPlatform {
     /// Event handle we duplicate to provide proxy handles.
     source_handle: WrappedHandle,
@@ -54,35 +63,39 @@ pub struct FilesillyPlatform {
     /// Map of currently open streams.
     handles: DashMap<WrappedHandle, HeapStream, BuildIdentityHasher<WrappedHandle>>,
 
-    /// NT object manager format path for the base directory we're modifying. Paths below this
-    /// directory get passed to hooks.
-    base_path_nt: Vec<u16>,
-
-    /// The base path in a normal format.
-    base_path: PathBuf,
+    base_paths: Vec<BasePath>,
 }
 
 impl FilesillyPlatform {
-    pub fn new(base_path: &Path) -> windows::core::Result<Self> {
+    pub fn new(base_paths: &[&Path]) -> windows::core::Result<Self> {
         // Make an unnamed event to get a handle to a kernel object we can use.
         let source_handle = unsafe { CreateEventW(None, true, false, None)? };
 
-        let base_path_nt = base_path
-            .as_os_str()
-            .encode_wide()
-            .chain(once(0u16))
-            .collect::<Vec<_>>();
-        let mut base_path_nt = normalize_path(&base_path_nt)?;
+        let base_paths = base_paths
+            .iter()
+            .map(|path| {
+                let nt = path
+                    .as_os_str()
+                    .encode_wide()
+                    .chain(once(0u16))
+                    .collect::<Vec<_>>();
 
-        if !base_path_nt.ends_with(&['\\' as u16]) {
-            base_path_nt.push('\\' as u16);
-        }
+                let mut nt = normalize_path(&nt)?;
+
+                if !nt.ends_with(&['\\' as u16]) {
+                    nt.push('\\' as u16);
+                }
+
+                let rust = PathBuf::from(path);
+
+                Ok(BasePath { nt, rust })
+            })
+            .collect::<windows::core::Result<Vec<BasePath>>>()?;
 
         Ok(Self {
             source_handle: source_handle.into(),
             handles: DashMap::default(),
-            base_path_nt,
-            base_path: base_path.to_owned(),
+            base_paths,
         })
     }
 
@@ -125,8 +138,8 @@ impl Drop for FilesillyPlatform {
     }
 }
 
-pub fn init(base_path: &Path, factory: Box<dyn StreamFactory>) -> crate::Result<()> {
-    let platform = FilesillyPlatform::new(base_path).map_err(Error::from_windows)?;
+pub fn init(base_paths: &[&Path], factory: Box<dyn StreamFactory>) -> crate::Result<()> {
+    let platform = FilesillyPlatform::new(base_paths).map_err(Error::from_windows)?;
     Filesilly::setup(platform, factory);
 
     unsafe {
