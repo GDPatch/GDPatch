@@ -6,7 +6,7 @@ use crate::os::windows::detours::{
     NT_READ_FILE_HOOK, NT_SET_INFORMATION_FILE_HOOK, NT_WRITE_FILE_HOOK,
 };
 use crate::os::windows::util::normalize_path;
-use crate::{Error, FileSilly, HeapStream, StreamFactory};
+use crate::{Error, Filesilly, HeapStream, StreamFactory};
 use dashmap::DashMap;
 use detours::NT_CREATE_FILE_HOOK;
 use identity_hash::{BuildIdentityHasher, IdentityHashable};
@@ -16,14 +16,14 @@ use std::iter::once;
 use std::os::raw::c_void;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use windows::Win32::Foundation::{CloseHandle, DuplicateHandle, DUPLICATE_SAME_ACCESS};
+use windows::Win32::Foundation::{CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle};
 use windows::Win32::System::Threading::{CreateEventW, GetCurrentProcess};
 use windows::{
-    core::{PCSTR, PCWSTR},
     Win32::{
         Foundation::HANDLE,
         System::LibraryLoader::{GetProcAddress, LoadLibraryW},
     },
+    core::{PCSTR, PCWSTR},
 };
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -47,7 +47,7 @@ impl From<HANDLE> for WrappedHandle {
 }
 
 #[derive(Debug)]
-pub struct FileSillyPlatform {
+pub struct FilesillyPlatform {
     /// Event handle we duplicate to provide proxy handles.
     source_handle: WrappedHandle,
 
@@ -62,7 +62,7 @@ pub struct FileSillyPlatform {
     base_path: PathBuf,
 }
 
-impl FileSillyPlatform {
+impl FilesillyPlatform {
     pub fn new(base_path: &Path) -> windows::core::Result<Self> {
         // Make an unnamed event to get a handle to a kernel object we can use.
         let source_handle = unsafe { CreateEventW(None, true, false, None)? };
@@ -117,7 +117,7 @@ impl FileSillyPlatform {
     }
 }
 
-impl Drop for FileSillyPlatform {
+impl Drop for FilesillyPlatform {
     fn drop(&mut self) {
         unsafe {
             let _ = CloseHandle(self.source_handle.0);
@@ -126,8 +126,8 @@ impl Drop for FileSillyPlatform {
 }
 
 pub fn init(base_path: &Path, factory: Box<dyn StreamFactory>) -> crate::Result<()> {
-    let platform = FileSillyPlatform::new(base_path).map_err(Error::from_windows)?;
-    FileSilly::setup(platform, factory);
+    let platform = FilesillyPlatform::new(base_path).map_err(Error::from_windows)?;
+    Filesilly::setup(platform, factory);
 
     unsafe {
         NT_CREATE_FILE_HOOK.enable()?;
