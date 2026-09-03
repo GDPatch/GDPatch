@@ -150,31 +150,38 @@ unsafe fn create_file_handler(
     };
 
     // Path should always be shaped like an NT object manager path now.
-    let base_path = &Filesilly::platform().base_path_nt;
-    let relative_path = path.strip_prefix(&base_path[..])?;
-    let relative_path = PathBuf::from(OsString::from_wide(relative_path));
-    let absolute_path = Filesilly::platform().base_path.join(&relative_path);
-    let result = Filesilly::factory().create_stream(&absolute_path);
+    let platform = Filesilly::platform();
+    for base_path in &platform.base_paths {
+        let Some(relative_path) = path.strip_prefix(&base_path.nt[..]) else {
+            continue;
+        };
 
-    let stream = match result {
-        Ok(None) => return None,
-        Ok(Some(stream)) => stream,
-        Err(err) => {
-            error!(?err, "stream factory returned an error");
-            let status = io_error_to_status(&err);
-            return Some(Err(status));
-        }
-    };
+        let relative_path = PathBuf::from(OsString::from_wide(relative_path));
+        let absolute_path = base_path.rust.join(&relative_path);
+        let result = Filesilly::factory().create_stream(&absolute_path);
 
-    Some(
-        match Filesilly::platform().allocate_handle_for_stream(stream) {
-            Ok(handle) => Ok(handle.0),
+        let stream = match result {
+            Ok(None) => return None,
+            Ok(Some(stream)) => stream,
             Err(err) => {
-                error!(?err, "failed to generate fake handle");
-                return Some(Err(STATUS_INTERNAL_ERROR));
+                error!(?err, "stream factory returned an error");
+                let status = io_error_to_status(&err);
+                return Some(Err(status));
             }
-        },
-    )
+        };
+
+        return Some(
+            match Filesilly::platform().allocate_handle_for_stream(stream) {
+                Ok(handle) => Ok(handle.0),
+                Err(err) => {
+                    error!(?err, "failed to generate fake handle");
+                    return Some(Err(STATUS_INTERNAL_ERROR));
+                }
+            },
+        );
+    }
+
+    None
 }
 
 type NtCloseFn = unsafe extern "system" fn(object: HANDLE) -> NTSTATUS;

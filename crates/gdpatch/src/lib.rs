@@ -179,7 +179,7 @@ impl GDPatch {
             let current_exe = current_exe()?;
             let base_dir = current_exe.parent().unwrap(); // TODO
             let factory = Box::new(GDPatchStreamFactory(pack_config.clone()));
-            filesilly::init(base_dir, factory)?;
+            filesilly::init(&[base_dir], factory)?;
         }
 
         // Search for mods.

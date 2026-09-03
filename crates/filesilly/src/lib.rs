@@ -79,6 +79,6 @@ pub trait StreamFactory: Send + Sync + Debug {
 ///
 /// # Errors
 /// This function errors if any part of initialization fails (e.g. hook placement can fail).
-pub fn init(base_path: &Path, factory: Box<dyn StreamFactory>) -> Result<()> {
-    os::init(base_path, factory)
+pub fn init(base_paths: &[&Path], factory: Box<dyn StreamFactory>) -> Result<()> {
+    os::init(base_paths, factory)
 }
