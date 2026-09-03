@@ -1,8 +1,8 @@
+use crate::{Error, os};
+use retour::{Function, GenericDetour, HookableWith};
 use std::ffi::CStr;
 use std::mem;
 use std::sync::LazyLock;
-use retour::{Function, GenericDetour, HookableWith};
-use crate::{os, Error};
 
 pub type LockDetour<T> = LazyLock<SillyHook<T, T>>;
 

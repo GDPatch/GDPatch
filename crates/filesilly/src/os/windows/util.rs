@@ -1,10 +1,21 @@
 use std::borrow::Cow;
 use std::io::ErrorKind;
 use std::{io, slice};
-use windows::core::{HRESULT, PCWSTR};
 use windows::Wdk::Storage::FileSystem::RtlDosPathNameToNtPathName_U_WithStatus;
-use windows::Win32::Foundation::{NTSTATUS, STATUS_ACCESS_DENIED, STATUS_ADDRESS_ALREADY_ASSOCIATED, STATUS_ADDRESS_NOT_ASSOCIATED, STATUS_CONNECTION_ABORTED, STATUS_CONNECTION_REFUSED, STATUS_CONNECTION_RESET, STATUS_DIRECTORY_NOT_EMPTY, STATUS_DIRECTORY_NOT_SUPPORTED, STATUS_DISK_FULL, STATUS_END_OF_FILE, STATUS_FILE_TOO_LARGE, STATUS_HOST_UNREACHABLE, STATUS_INTERRUPTED, STATUS_INVALID_DEVICE_REQUEST, STATUS_INVALID_PARAMETER, STATUS_MEDIA_WRITE_PROTECTED, STATUS_NETWORK_NAME_DELETED, STATUS_NETWORK_UNREACHABLE, STATUS_NOT_A_DIRECTORY, STATUS_NOT_FOUND, STATUS_NOT_SAME_DEVICE, STATUS_NOT_SUPPORTED, STATUS_NO_MEMORY, STATUS_OBJECT_NAME_EXISTS, STATUS_OBJECT_PATH_INVALID, STATUS_PIPE_BROKEN, STATUS_POSSIBLE_DEADLOCK, STATUS_QUOTA_EXCEEDED, STATUS_RESOURCE_IN_USE, STATUS_SUCCESS, STATUS_TIMEOUT, STATUS_TOO_MANY_LINKS, STATUS_UNSUCCESSFUL, UNICODE_STRING};
+use windows::Win32::Foundation::{
+    NTSTATUS, STATUS_ACCESS_DENIED, STATUS_ADDRESS_ALREADY_ASSOCIATED,
+    STATUS_ADDRESS_NOT_ASSOCIATED, STATUS_CONNECTION_ABORTED, STATUS_CONNECTION_REFUSED,
+    STATUS_CONNECTION_RESET, STATUS_DIRECTORY_NOT_EMPTY, STATUS_DIRECTORY_NOT_SUPPORTED,
+    STATUS_DISK_FULL, STATUS_END_OF_FILE, STATUS_FILE_TOO_LARGE, STATUS_HOST_UNREACHABLE,
+    STATUS_INTERRUPTED, STATUS_INVALID_DEVICE_REQUEST, STATUS_INVALID_PARAMETER,
+    STATUS_MEDIA_WRITE_PROTECTED, STATUS_NETWORK_NAME_DELETED, STATUS_NETWORK_UNREACHABLE,
+    STATUS_NO_MEMORY, STATUS_NOT_A_DIRECTORY, STATUS_NOT_FOUND, STATUS_NOT_SAME_DEVICE,
+    STATUS_NOT_SUPPORTED, STATUS_OBJECT_NAME_EXISTS, STATUS_OBJECT_PATH_INVALID,
+    STATUS_PIPE_BROKEN, STATUS_POSSIBLE_DEADLOCK, STATUS_QUOTA_EXCEEDED, STATUS_RESOURCE_IN_USE,
+    STATUS_SUCCESS, STATUS_TIMEOUT, STATUS_TOO_MANY_LINKS, STATUS_UNSUCCESSFUL, UNICODE_STRING,
+};
 use windows::Win32::System::WindowsProgramming::RtlFreeUnicodeString;
+use windows::core::{HRESULT, PCWSTR};
 
 #[derive(Debug, Default)]
 struct OwnedUnicodeString(pub UNICODE_STRING);
@@ -24,7 +35,10 @@ impl Drop for OwnedUnicodeString {
 /// Panics if the path passed isn't null terminated.
 pub fn normalize_path(path: &[u16]) -> windows::core::Result<Vec<u16>> {
     let mut output_path = OwnedUnicodeString::default();
-    assert!(path.ends_with(&[0u16]), "path passed to normalize_path is not null terminated");
+    assert!(
+        path.ends_with(&[0u16]),
+        "path passed to normalize_path is not null terminated"
+    );
 
     let status = unsafe {
         RtlDosPathNameToNtPathName_U_WithStatus(
@@ -36,7 +50,9 @@ pub fn normalize_path(path: &[u16]) -> windows::core::Result<Vec<u16>> {
     };
 
     if status != STATUS_SUCCESS {
-        return Err(windows::core::Error::from_hresult(HRESULT::from_nt(status.0)));
+        return Err(windows::core::Error::from_hresult(HRESULT::from_nt(
+            status.0,
+        )));
     }
 
     let copied = unsafe {
@@ -72,7 +88,7 @@ pub unsafe fn normalize_unicode_string_path(input_path: &UNICODE_STRING) -> Opti
     } else {
         // allocate a new buffer
         let mut v = Vec::with_capacity(used_path.len() + 1);
-        v.extend_from_slice(&used_path);
+        v.extend_from_slice(used_path);
         v.push(0);
         Cow::Owned(v)
     };

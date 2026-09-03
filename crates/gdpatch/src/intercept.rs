@@ -4,13 +4,13 @@ use crate::virtual_pack::VirtualPack;
 use color_eyre::eyre::eyre;
 use filesilly::{HeapStream, Stream, StreamFactory};
 use gdpatch_godot::pack::{Pack, PackConfig};
+use parking_lot::Mutex;
 use std::env::{current_dir, current_exe};
 use std::fs::File;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{io, mem};
-use parking_lot::Mutex;
 use tracing::{debug, error, trace, warn};
 
 /// An open handle to a virtual pack. Stores a seek position and forwards reads to the inner pack.
@@ -312,10 +312,9 @@ pub struct GDPatchStreamFactory(pub PackConfig);
 impl StreamFactory for GDPatchStreamFactory {
     fn create_stream(&self, path: &Path) -> io::Result<Option<HeapStream>> {
         // Redirect to the IPC stream if needed.
-        if path == crate::ipc::IPC_FILENAME
-            || current_dir()
-                .map(|d| path == d.join(crate::ipc::IPC_FILENAME))
-                .unwrap_or_default()
+        if current_dir()
+            .map(|d| path == d.join(crate::ipc::IPC_FILENAME))
+            .unwrap_or_default()
         {
             let stream = crate::ipc::IpcStream::new();
             return Ok(Some(Arc::new(Mutex::new(stream))));

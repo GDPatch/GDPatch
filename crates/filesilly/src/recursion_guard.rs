@@ -9,7 +9,10 @@ impl RecursionGuard {
     }
 
     pub fn acquire(&self) -> Option<HeldRecursionGuard<'_>> {
-        let acquired = self.0.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_ok();
+        let acquired = self
+            .0
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok();
 
         if acquired {
             Some(HeldRecursionGuard(self))

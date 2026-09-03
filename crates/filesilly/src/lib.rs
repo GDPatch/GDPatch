@@ -62,8 +62,8 @@ impl Stream for std::fs::File {}
 
 /// Factory trait for [`Stream`].
 pub trait StreamFactory: Send + Sync + Debug {
-    /// Creates a stream for a path. The path will always be a path relative to the base directory
-    /// passed to [`filesilly::init`].
+    /// Creates a stream for a path. The path will always be an absolute path within the base
+    /// directory passed to [`filesilly::init`].
     ///
     /// [`filesilly::init`]: init
     ///
