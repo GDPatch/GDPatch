@@ -285,10 +285,14 @@ impl GDPatch {
                     let _entered = info_span!("patcher_setup", mod = %r#mod.info.id).entered();
 
                     if let Some(patcher) = &r#mod.patcher {
-                        let patcher = match ModLua::new(patcher, r#mod.info.id.clone()) {
+                        let patcher = match ModLua::new(
+                            patcher,
+                            r#mod.root_directory.clone(),
+                            r#mod.info.id.clone(),
+                        ) {
                             Ok(patcher) => patcher,
                             Err(error) => {
-                                error!(?error, "failed to create patcher");
+                                error!(%error, "failed to create patcher");
                                 continue;
                             }
                         };
@@ -304,7 +308,7 @@ impl GDPatch {
 
                 match patcher.run(old_pack, path.clone()) {
                     Ok(mod_callbacks) => callbacks.merge(mod_callbacks),
-                    Err(err) => error!(?err, mod_id = patcher.mod_id, "failed to run patcher"),
+                    Err(err) => error!(%err, mod_id = patcher.mod_id, "failed to run patcher"),
                 }
             }
 

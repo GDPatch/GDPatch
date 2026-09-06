@@ -31,7 +31,11 @@ pub struct ModLua {
 impl ModLua {
     /// Creates a new [`ModLua`] with the given source code and chunk name. This will parse the
     /// source into a chunk without running it.
-    pub fn new(source: &str, mod_id: String) -> color_eyre::Result<Self> {
+    pub fn new(
+        source: &str,
+        mod_directory: Option<PathBuf>,
+        mod_id: String,
+    ) -> color_eyre::Result<Self> {
         let lua = Lua::new();
 
         lua.globals()
@@ -71,6 +75,20 @@ impl ModLua {
                 Ok(())
             })?,
         )?;
+
+        if let Some(mod_directory) = mod_directory {
+            let package = lua.globals().get::<mlua::Table>("package")?;
+            let package_path = package.get::<String>("path")?;
+
+            let mut package_path = package_path
+                .split(';')
+                .map(|s| s.to_owned())
+                .collect::<Vec<_>>();
+            package_path.push(format!("{}/?.lua", mod_directory.display()));
+
+            let package_path = package_path.join(";");
+            package.set("path", package_path)?;
+        }
 
         let chunk = lua
             .load(source)
