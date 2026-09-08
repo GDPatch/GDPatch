@@ -31,3 +31,6 @@ workspace = true
 features = [
     "Win32_System_SystemInformation",
 ]
+
+[features]
+dotnet = ["gdpatch/dotnet"]

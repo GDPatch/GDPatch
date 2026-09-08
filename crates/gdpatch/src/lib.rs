@@ -215,6 +215,13 @@ impl GDPatch {
         let existing = self.mods.write().replace(mods);
         assert!(existing.is_none(), "ran mod initialization twice!");
 
+        #[cfg(feature = "dotnet")]
+        {
+            let dotnet_dir = self.root_directory.join("dotnet");
+            std::fs::create_dir_all(&dotnet_dir).context("failed to create dotnet directory")?;
+            gdpatch_dotnet::init(&dotnet_dir)?;
+        }
+
         Ok(())
     }
 
