@@ -318,11 +318,16 @@ unsafe fn tell_handler(fd: c_int) -> Option<Result<u64, c_int>> {
     }))
 }
 
-type StatFn = unsafe extern "system" fn(filename: *const c_char, buf: *mut stat64) -> c_int;
+type StatFn =
+    unsafe extern "system" fn(ver: c_int, filename: *const c_char, buf: *mut stat64) -> c_int;
 pub static STAT_HOOK: LockDetour<StatFn> =
-    LazyLock::new(|| SillyHook::new(c"GLIBC_2.33", c"stat64", stat_detour));
+    LazyLock::new(|| SillyHook::new(c"GLIBC_2.2.5", c"__xstat64", stat_detour));
 
-unsafe extern "system" fn stat_detour(filename: *const c_char, buf: *mut stat64) -> c_int {
+unsafe extern "system" fn stat_detour(
+    ver: c_int,
+    filename: *const c_char,
+    buf: *mut stat64,
+) -> c_int {
     let span = trace_span!(target: "filesilly::hooks", parent: None, "stat");
     let _entered = span.enter();
 
@@ -338,7 +343,7 @@ unsafe extern "system" fn stat_detour(filename: *const c_char, buf: *mut stat64)
         .flatten()
     else {
         // forward unmodified call
-        unsafe { return STAT_HOOK.unwrap().call(filename, buf) }
+        unsafe { return STAT_HOOK.unwrap().call(ver, filename, buf) }
     };
 
     match result {
