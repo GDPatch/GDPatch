@@ -12,18 +12,15 @@ use identity_hash::{BuildIdentityHasher, IdentityHashable};
 use libc::c_int;
 use std::{
     ffi::CStr,
+    fs::File,
     hash::{Hash, Hasher},
-    os::raw::c_void,
+    os::{fd::AsRawFd, raw::c_void},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicI32, Ordering},
 };
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[repr(transparent)]
 struct WrappedFd(pub c_int);
-
-unsafe impl Send for WrappedFd {}
-unsafe impl Sync for WrappedFd {}
 
 impl IdentityHashable for WrappedFd {}
 impl Hash for WrappedFd {
@@ -40,7 +37,7 @@ impl From<c_int> for WrappedFd {
 
 #[derive(Debug)]
 pub struct FilesillyPlatform {
-    next_handle: AtomicI32,
+    source_file: File,
 
     /// Map of currently open streams.
     file_descriptors: DashMap<WrappedFd, HeapStream, BuildIdentityHasher<WrappedFd>>,
@@ -50,23 +47,27 @@ pub struct FilesillyPlatform {
 }
 
 impl FilesillyPlatform {
-    const FAKE_HANDLE_START: c_int = 0x90D07; // "GODOT" :+1:
-
     pub fn new(base_paths: &[&Path]) -> crate::Result<Self> {
-        let next_handle = AtomicI32::new(Self::FAKE_HANDLE_START);
+        let source_file = File::open("/dev/null")?;
 
         Ok(Self {
-            next_handle,
+            source_file,
             file_descriptors: DashMap::default(),
             base_paths: base_paths.iter().map(|p| p.to_path_buf()).collect(),
         })
     }
 
-    fn allocate_fd_for_stream(&self, stream: HeapStream) -> WrappedFd {
-        let fd = self.next_handle.fetch_add(1, Ordering::Relaxed);
+    fn allocate_fd_for_stream(&self, stream: HeapStream) -> crate::Result<WrappedFd> {
+        let source_fd = self.source_file.as_raw_fd();
+
+        let fd = unsafe { libc::dup(source_fd) };
+        if fd == -1 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+
         let fd = WrappedFd(fd);
         self.file_descriptors.insert(fd, stream);
-        fd
+        Ok(fd)
     }
 
     fn get_stream(&self, fd: c_int) -> Option<HeapStream> {
