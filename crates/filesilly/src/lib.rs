@@ -53,6 +53,9 @@ pub enum Error {
 
     #[error("failed to place function hook")]
     Hook,
+
+    #[error("an i/o error occurred: {}", .0)]
+    Io(#[from] std::io::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

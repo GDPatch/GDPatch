@@ -74,18 +74,21 @@ unsafe fn open_handler(filename: *const c_char) -> Option<Result<c_int, c_int>> 
     let path = resolve_path(&path)?;
     let result = Filesilly::factory().open(&path);
 
-    let stream = match result {
-        Ok(None) => return None,
-        Ok(Some(stream)) => stream,
+    match result {
+        Ok(None) => None,
+        Ok(Some(stream)) => Some(match Filesilly::platform().allocate_fd_for_stream(stream) {
+            Ok(fd) => Ok(fd.0),
+            Err(err) => {
+                error!(?err, "failed to generate fake file descriptor");
+                return Some(Err(libc::EINVAL));
+            }
+        }),
         Err(err) => {
             error!(?err, "stream factory returned an error");
             let status = err.raw_os_error().unwrap_or(libc::EINVAL);
-            return Some(Err(status));
+            Some(Err(status))
         }
-    };
-
-    let fd = Filesilly::platform().allocate_fd_for_stream(stream);
-    Some(Ok(fd.0))
+    }
 }
 
 type CloseFn = unsafe extern "system" fn(stream: *mut FILE) -> c_int;
@@ -106,7 +109,6 @@ unsafe extern "system" fn close_detour(stream: *mut FILE) -> c_int {
     if let Some((_, stream)) = platform.file_descriptors.remove(&WrappedFd(fd)) {
         trace!("closed handle");
         drop(stream);
-        return 0;
     }
 
     unsafe { CLOSE_HOOK.unwrap().call(stream) }
