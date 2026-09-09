@@ -5,6 +5,7 @@ use color_eyre::eyre::{Context, ContextCompat, OptionExt, bail};
 use memmap2::Mmap;
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use std::env::current_exe;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -173,8 +174,13 @@ impl GDPatch {
             .clone()
             .map(|e| e.pack)
             .unwrap_or_default();
-        filesilly::init()?;
-        filesilly::set(Box::new(GDPatchStreamFactory(pack_config.clone())));
+
+        {
+            let current_exe = current_exe()?;
+            let base_dir = current_exe.parent().unwrap(); // TODO
+            let factory = Box::new(GDPatchStreamFactory(pack_config.clone()));
+            filesilly::init(&[base_dir], factory)?;
+        }
 
         // Search for mods.
         let mods_directory = self.root_directory.join("mods");

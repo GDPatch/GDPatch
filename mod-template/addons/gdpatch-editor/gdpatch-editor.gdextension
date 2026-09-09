@@ -1,0 +1,12 @@
+[configuration]
+entry_symbol = "gdpatch_editor_init"
+compatibility_minimum = 4.1
+
+# FIXME
+[libraries]
+linux.debug.x86_64 =     "res://../target/debug/libgdpatch_editor.so"
+linux.release.x86_64 =   "res://../target/release/libgdpatch_editor.so"
+windows.debug.x86_64 =   "res://../target/debug/gdpatch_editor.dll"
+windows.release.x86_64 = "res://../target/release/gdpatch_editor.dll"
+macos.debug.arm64 =      "res://../target/debug/libgdpatch_editor.dylib"
+macos.release.arm64 =    "res://../target/release/libgdpatch_editor.dylib"
