@@ -1,22 +1,24 @@
 use crate::hook::{LockDetour, SillyHook};
+use crate::os::windows::WrappedHandle;
 use crate::os::windows::util::{io_error_to_status, normalize_unicode_string_path};
-use crate::os::windows::{WrappedHandle, util};
 use crate::recursion_guard::RecursionGuard;
-use crate::{Filesilly, HeapStream, Stream};
+use crate::{Filesilly, HeapStream, StatResult, Stream};
 use std::ffi::OsString;
 use std::io::SeekFrom;
 use std::os::raw::{c_ulong, c_void};
 use std::os::windows::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::sync::LazyLock;
+use std::time::{Duration, SystemTime};
 use std::{io, slice};
 use tracing::{error, field, trace, trace_span, warn};
 use windows::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows::Wdk::Storage::FileSystem::{
-    FILE_BASIC_INFORMATION, FILE_INFORMATION_CLASS, FILE_POSITION_INFORMATION,
-    FILE_STANDARD_INFORMATION, FS_INFORMATION_CLASS, FileBasicInformation, FileFsDeviceInformation,
-    FileFsFullSizeInformationEx, FileFsSizeInformation, FileFsVolumeInformation,
-    FilePositionInformation, FileStandardInformation,
+    FILE_BASIC_INFORMATION, FILE_INFORMATION_CLASS, FILE_NETWORK_OPEN_INFORMATION,
+    FILE_POSITION_INFORMATION, FILE_STANDARD_INFORMATION, FS_INFORMATION_CLASS,
+    FileBasicInformation, FileFsDeviceInformation, FileFsFullSizeInformationEx,
+    FileFsSizeInformation, FileFsVolumeInformation, FilePositionInformation,
+    FileStandardInformation,
 };
 use windows::Wdk::System::SystemServices::{
     FILE_FS_DEVICE_INFORMATION, FILE_FS_FULL_SIZE_INFORMATION_EX, FILE_FS_SIZE_INFORMATION,
@@ -24,11 +26,15 @@ use windows::Wdk::System::SystemServices::{
 };
 use windows::Win32::Foundation::{
     HANDLE, NTSTATUS, STATUS_INFO_LENGTH_MISMATCH, STATUS_INTERNAL_ERROR,
-    STATUS_INVALID_INFO_CLASS, STATUS_INVALID_PARAMETER, STATUS_SUCCESS,
+    STATUS_INVALID_INFO_CLASS, STATUS_INVALID_PARAMETER, STATUS_NOT_FOUND, STATUS_SUCCESS,
 };
 use windows::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_NORMAL, FILE_DEVICE_DISK};
 use windows::Win32::System::IO::{IO_STATUS_BLOCK, PIO_APC_ROUTINE};
 use windows::Win32::System::WindowsProgramming::FILE_OPENED;
+
+thread_local! {
+    static RECURSION_GUARD: RecursionGuard = const { RecursionGuard::new() };
+}
 
 type NtCreateFileFn = unsafe extern "system" fn(
     handle: *mut HANDLE,
@@ -46,10 +52,6 @@ type NtCreateFileFn = unsafe extern "system" fn(
 
 pub static NT_CREATE_FILE_HOOK: LockDetour<NtCreateFileFn> =
     LazyLock::new(|| SillyHook::new(c"ntdll.dll", c"NtCreateFile", create_file_detour));
-
-thread_local! {
-    static CREATE_FILE_RECURSION_GUARD: RecursionGuard = const { RecursionGuard::new() };
-}
 
 unsafe extern "system" fn create_file_detour(
     out_handle: *mut HANDLE,
@@ -70,7 +72,7 @@ unsafe extern "system" fn create_file_detour(
     );
     let _entered = span.enter();
 
-    let Some(result) = CREATE_FILE_RECURSION_GUARD
+    let Some(result) = RECURSION_GUARD
         .try_with(|r| match r.acquire() {
             Some(_guard) => unsafe { create_file_handler(object_attributes) },
             None => {
@@ -126,9 +128,9 @@ unsafe extern "system" fn create_file_detour(
     }
 }
 
-unsafe fn create_file_handler(
+unsafe fn convert_object_attributes_to_paths(
     object_attributes: *const OBJECT_ATTRIBUTES,
-) -> Option<Result<HANDLE, NTSTATUS>> {
+) -> Option<PathBuf> {
     // katie: A real Windows system (at least the copy of Windows 10 that I have installed) always
     // passes an NT object manager path. However, Wine tends to pass other paths, including root
     // local device paths (starting \\?\) and regular Win32 paths (like C:\Whatever).
@@ -149,39 +151,40 @@ unsafe fn create_file_handler(
         normalize_unicode_string_path(input_path)?
     };
 
-    // Path should always be shaped like an NT object manager path now.
     let platform = Filesilly::platform();
-    for base_path in &platform.base_paths {
-        let Some(relative_path) = path.strip_prefix(&base_path.nt[..]) else {
-            continue;
-        };
-
+    platform.base_paths.iter().find_map(|base_path| {
+        let relative_path = path.strip_prefix(&base_path.nt[..])?;
         let relative_path = PathBuf::from(OsString::from_wide(relative_path));
         let absolute_path = base_path.rust.join(&relative_path);
-        let result = Filesilly::factory().create_stream(&absolute_path);
+        Some(absolute_path)
+    })
+}
 
-        let stream = match result {
-            Ok(None) => return None,
-            Ok(Some(stream)) => stream,
+unsafe fn create_file_handler(
+    object_attributes: *const OBJECT_ATTRIBUTES,
+) -> Option<Result<HANDLE, NTSTATUS>> {
+    let path = unsafe { convert_object_attributes_to_paths(object_attributes)? };
+    let result = Filesilly::factory().open(&path);
+
+    let stream = match result {
+        Ok(None) => return None,
+        Ok(Some(stream)) => stream,
+        Err(err) => {
+            error!(?err, "stream factory returned an error");
+            let status = io_error_to_status(&err);
+            return Some(Err(status));
+        }
+    };
+
+    Some(
+        match Filesilly::platform().allocate_handle_for_stream(stream) {
+            Ok(handle) => Ok(handle.0),
             Err(err) => {
-                error!(?err, "stream factory returned an error");
-                let status = io_error_to_status(&err);
-                return Some(Err(status));
+                error!(?err, "failed to generate fake handle");
+                return Some(Err(STATUS_INTERNAL_ERROR));
             }
-        };
-
-        return Some(
-            match Filesilly::platform().allocate_handle_for_stream(stream) {
-                Ok(handle) => Ok(handle.0),
-                Err(err) => {
-                    error!(?err, "failed to generate fake handle");
-                    return Some(Err(STATUS_INTERNAL_ERROR));
-                }
-            },
-        );
-    }
-
-    None
+        },
+    )
 }
 
 type NtCloseFn = unsafe extern "system" fn(object: HANDLE) -> NTSTATUS;
@@ -391,7 +394,7 @@ where
 
         Err(error) => {
             error!(?error, "failed to seek or read/write fake handle");
-            let status = util::io_error_to_status(&error);
+            let status = io_error_to_status(&error);
             (status, 0)
         }
     })
@@ -782,5 +785,180 @@ unsafe fn query_volume_information_file_handler(
                 (STATUS_INVALID_INFO_CLASS, 0)
             }
         })
+    }
+}
+
+/// Converts a [`SystemTime`] to a Windows file timestamp.
+// NOTE: this is kind of silly since SystemTime is just a FILETIME internally already, but the type
+// is opaque and there's no safe way to obtain the FILETIME from it.
+fn convert_system_time_to_windows_timestamp(time: SystemTime) -> i64 {
+    // Windows defines the epoch as January 1, 1601 00:00:00 UTC.
+    let epoch = SystemTime::UNIX_EPOCH
+        - Duration::from_secs({
+            let years = 1970u64 - 1601u64;
+            let days = years * 365;
+
+            days * 24 * 60 * 60
+        });
+
+    const NANOS_PER_INTERVAL: u128 = 100;
+
+    match time.duration_since(epoch) {
+        Ok(duration) => {
+            let intervals = duration.as_nanos() / NANOS_PER_INTERVAL;
+
+            if intervals > (i64::MAX as u128) {
+                warn!(?time, "file time larger than i64::MAX");
+                1
+            } else {
+                intervals as i64
+            }
+        }
+        Err(_) => {
+            warn!(?time, "file time before epoch (01-01-1601 00:00:00 UTC)");
+            1
+        }
+    }
+}
+
+type NtQueryFullAttributesFile = unsafe extern "system" fn(
+    object_attributes: *const OBJECT_ATTRIBUTES,
+    out_information: *mut FILE_NETWORK_OPEN_INFORMATION,
+) -> NTSTATUS;
+pub static NT_QUERY_FULL_ATTRIBUTES_FILE: LockDetour<NtQueryFullAttributesFile> =
+    LazyLock::new(|| {
+        SillyHook::new(
+            c"ntdll.dll",
+            c"NtQueryFullAttributesFile",
+            query_full_attributes_file_detour,
+        )
+    });
+
+unsafe extern "system" fn query_full_attributes_file_detour(
+    object_attributes: *const OBJECT_ATTRIBUTES,
+    out_information: *mut FILE_NETWORK_OPEN_INFORMATION,
+) -> NTSTATUS {
+    let span = trace_span!(
+        target: "filesilly::hooks", parent: None, "NtQueryFullAttributesFile",
+        status = field::Empty
+    );
+    let _entered = span.enter();
+
+    let Some(status) = RECURSION_GUARD
+        .try_with(|r| match r.acquire() {
+            Some(_guard) => unsafe {
+                query_full_attributes_file_handler(object_attributes, &mut *out_information)
+            },
+            None => {
+                trace!("re-entrant call to NtQueryFullAttributesFile");
+                None
+            }
+        })
+        .ok()
+        .flatten()
+    else {
+        // forward unmodified call
+        unsafe {
+            return NT_QUERY_FULL_ATTRIBUTES_FILE
+                .unwrap()
+                .call(object_attributes, out_information);
+        }
+    };
+
+    status
+}
+
+unsafe fn query_full_attributes_file_handler(
+    object_attributes: *const OBJECT_ATTRIBUTES,
+    out_information: *mut FILE_NETWORK_OPEN_INFORMATION,
+) -> Option<NTSTATUS> {
+    let path = unsafe { convert_object_attributes_to_paths(object_attributes)? };
+    let result = Filesilly::factory().stat(&path);
+
+    match result {
+        Ok(StatResult::Passthrough) => None,
+        Ok(StatResult::DoesntExist) => Some(STATUS_NOT_FOUND),
+        Ok(StatResult::Exists(stat)) => {
+            let out_information = unsafe { &mut *out_information };
+            out_information.EndOfFile = stat.size as i64;
+            out_information.ChangeTime = convert_system_time_to_windows_timestamp(stat.change_time);
+            out_information.LastAccessTime =
+                convert_system_time_to_windows_timestamp(stat.access_time);
+            out_information.LastWriteTime =
+                convert_system_time_to_windows_timestamp(stat.modification_time);
+            out_information.CreationTime =
+                convert_system_time_to_windows_timestamp(stat.creation_time);
+            Some(STATUS_SUCCESS)
+        }
+        Err(err) => {
+            error!(?err, "`stat` returned an error");
+            let status = io_error_to_status(&err);
+            Some(status)
+        }
+    }
+}
+
+type NtQueryAttributesFile = unsafe extern "system" fn(
+    object_attributes: *const OBJECT_ATTRIBUTES,
+    out_information: *mut FILE_BASIC_INFORMATION,
+) -> NTSTATUS;
+pub static NT_QUERY_ATTRIBUTES_FILE: LockDetour<NtQueryAttributesFile> = LazyLock::new(|| {
+    SillyHook::new(
+        c"ntdll.dll",
+        c"NtQueryAttributesFile",
+        query_attributes_file_detour,
+    )
+});
+
+unsafe extern "system" fn query_attributes_file_detour(
+    object_attributes: *const OBJECT_ATTRIBUTES,
+    out_information: *mut FILE_BASIC_INFORMATION,
+) -> NTSTATUS {
+    let span = trace_span!(
+        target: "filesilly::hooks", parent: None, "NtQueryAttributesFile",
+        status = field::Empty
+    );
+    let _entered = span.enter();
+
+    let Some(status) = RECURSION_GUARD
+        .try_with(|r| match r.acquire() {
+            Some(_guard) => unsafe {
+                query_attributes_file_handler(object_attributes, &mut *out_information)
+            },
+            None => {
+                trace!("re-entrant call to NtQueryAttributesFile");
+                None
+            }
+        })
+        .ok()
+        .flatten()
+    else {
+        // forward unmodified call
+        unsafe {
+            return NT_QUERY_ATTRIBUTES_FILE
+                .unwrap()
+                .call(object_attributes, out_information);
+        }
+    };
+
+    status
+}
+
+unsafe fn query_attributes_file_handler(
+    object_attributes: *const OBJECT_ATTRIBUTES,
+    _out_information: *mut FILE_BASIC_INFORMATION,
+) -> Option<NTSTATUS> {
+    let path = unsafe { convert_object_attributes_to_paths(object_attributes)? };
+    let result = Filesilly::factory().stat(&path);
+
+    match result {
+        Ok(StatResult::Passthrough) => None,
+        Ok(StatResult::DoesntExist) => Some(STATUS_NOT_FOUND),
+        Ok(StatResult::Exists(_stat)) => Some(STATUS_SUCCESS),
+        Err(err) => {
+            error!(?err, "`stat` returned an error");
+            let status = io_error_to_status(&err);
+            Some(status)
+        }
     }
 }

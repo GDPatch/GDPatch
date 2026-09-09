@@ -2,7 +2,7 @@
 use crate::GDPatch;
 use crate::virtual_pack::VirtualPack;
 use color_eyre::eyre::eyre;
-use filesilly::{HeapStream, Stream, StreamFactory};
+use filesilly::{HeapStream, StatResult, Stream, StreamFactory};
 use gdpatch_godot::pack::{Pack, PackConfig};
 use parking_lot::Mutex;
 use std::env::{current_dir, current_exe};
@@ -310,7 +310,12 @@ impl Stream for PackStream {}
 pub struct GDPatchStreamFactory(pub PackConfig);
 
 impl StreamFactory for GDPatchStreamFactory {
-    fn create_stream(&self, path: &Path) -> io::Result<Option<HeapStream>> {
+    fn stat(&self, _path: &Path) -> io::Result<StatResult> {
+        // TODO
+        Ok(StatResult::Passthrough)
+    }
+
+    fn open(&self, path: &Path) -> io::Result<Option<HeapStream>> {
         // Redirect to the IPC stream if needed.
         if current_dir()
             .map(|d| path == d.join(crate::ipc::IPC_FILENAME))

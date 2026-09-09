@@ -5,6 +5,7 @@ use std::io;
 use std::io::{Read, Seek, Write};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
+use std::time::SystemTime;
 use thiserror::Error;
 
 mod hook;
@@ -60,16 +61,59 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub trait Stream: Read + Write + Seek + Send + Debug {}
 impl Stream for std::fs::File {}
 
+#[derive(Debug, Clone)]
+pub struct Stat {
+    /// Size of the file in bytes.
+    pub size: u64,
+
+    /// The last access time (corresponds to `st_atim` on Unix and `LastAccessTime` on Windows).
+    pub access_time: SystemTime,
+
+    /// The last modification time (corresponds to `st_mtim` on Unix and `LastWriteTime` on Windows).
+    pub modification_time: SystemTime,
+
+    /// The last time the file was "changed" (corresponds to `st_ctim` on Unix and `ChangeTime` on Windows).
+    pub change_time: SystemTime,
+
+    /// The creation time of the file (corresponds to `CreationTime` on Windows, ignored on Unix).
+    pub creation_time: SystemTime,
+}
+
+/// Result type for [`stat`].
+///
+/// [`stat`]: StreamFactory::stat
+#[derive(Debug, Clone)]
+pub enum StatResult {
+    /// Passes through the call to the underlying filesystem.
+    Passthrough,
+
+    /// Tells the caller that the file doesn't exist.
+    DoesntExist,
+
+    /// Tells the caller that the file exists and has the given properties.
+    Exists(Stat),
+}
+
 /// Factory trait for [`Stream`].
+///
+/// Paths provided to methods in this trait will always be absolute paths relative to one of the
+/// base directories passed to [`filesilly::init`].
+///
+/// [`filesilly::init`]: init
 pub trait StreamFactory: Send + Sync + Debug {
-    /// Creates a stream for a path. The path will always be an absolute path within the base
-    /// directory passed to [`filesilly::init`].
+    /// Gets information on a file without opening it.
     ///
-    /// [`filesilly::init`]: init
+    /// # Returns
+    /// Information on the provided path if available, or [`Passthrough`] to use the OS result.
+    ///
+    /// [`Passthrough`]: StatResult::Passthrough
+    fn stat(&self, path: &Path) -> io::Result<StatResult>;
+
+    /// Opens a path as a stream.
     ///
     /// # Returns
     /// A stream to use, or `None` to pass the file through to the OS.
-    fn create_stream(&self, path: &Path) -> io::Result<Option<HeapStream>>;
+    fn open(&self, path: &Path) -> io::Result<Option<HeapStream>>;
 }
 
 /// Initializes API hooks.

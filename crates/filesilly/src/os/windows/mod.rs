@@ -2,8 +2,9 @@ mod detours;
 mod util;
 
 use crate::os::windows::detours::{
-    NT_CLOSE_HOOK, NT_QUERY_INFORMATION_FILE_HOOK, NT_QUERY_VOLUME_INFORMATION_FILE_HOOK,
-    NT_READ_FILE_HOOK, NT_SET_INFORMATION_FILE_HOOK, NT_WRITE_FILE_HOOK,
+    NT_CLOSE_HOOK, NT_QUERY_ATTRIBUTES_FILE, NT_QUERY_FULL_ATTRIBUTES_FILE,
+    NT_QUERY_INFORMATION_FILE_HOOK, NT_QUERY_VOLUME_INFORMATION_FILE_HOOK, NT_READ_FILE_HOOK,
+    NT_SET_INFORMATION_FILE_HOOK, NT_WRITE_FILE_HOOK,
 };
 use crate::os::windows::util::normalize_path;
 use crate::{Error, Filesilly, HeapStream, StreamFactory};
@@ -150,6 +151,8 @@ pub fn init(base_paths: &[&Path], factory: Box<dyn StreamFactory>) -> crate::Res
         NT_SET_INFORMATION_FILE_HOOK.enable()?;
         NT_QUERY_INFORMATION_FILE_HOOK.enable()?;
         NT_QUERY_VOLUME_INFORMATION_FILE_HOOK.enable()?;
+        NT_QUERY_ATTRIBUTES_FILE.enable()?;
+        NT_QUERY_FULL_ATTRIBUTES_FILE.enable()?;
     }
 
     Ok(())
