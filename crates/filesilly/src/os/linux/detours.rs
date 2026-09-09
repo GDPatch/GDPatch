@@ -78,7 +78,7 @@ unsafe fn open_handler(filename: *const c_char) -> Option<Result<c_int, c_int>> 
     let base_path = &Filesilly::platform().base_path;
     let relative_path = path.strip_prefix(base_path).ok()?;
     let absolute_path = Filesilly::platform().base_path.join(relative_path);
-    let result = Filesilly::factory().create_stream(&absolute_path);
+    let result = Filesilly::factory().open(&absolute_path);
 
     let stream = match result {
         Ok(None) => return None,
