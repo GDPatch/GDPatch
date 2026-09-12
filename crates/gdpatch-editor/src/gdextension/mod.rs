@@ -10,6 +10,7 @@ use crate::gdextension::{
 use std::ffi::c_void;
 
 pub mod api;
+mod bindings;
 pub mod types;
 pub mod variant;
 
