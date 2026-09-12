@@ -1,0 +1,15 @@
+[package]
+name = "gobbind"
+description = "reflection library designed for implementing script bindings"
+publish = false
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+gobbind-macros = { path = "macros" }
+thiserror.workspace = true
+bevy_utils_proc_macros = "0.15.3"
+
+[features]
+12-arg = ["gobbind-macros/12-arg"]
