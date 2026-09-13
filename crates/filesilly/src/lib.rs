@@ -9,6 +9,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::SystemTime;
 use thiserror::Error;
 
+#[cfg(not(target_os = "macos"))]
 mod hook;
 mod os;
 mod recursion_guard;
@@ -23,6 +24,7 @@ struct Filesilly {
     factory: Box<dyn StreamFactory>,
 }
 
+#[allow(dead_code)]
 impl Filesilly {
     pub(crate) fn setup(platform: os::FilesillyPlatform, factory: Box<dyn StreamFactory>) {
         let instance = Self { platform, factory };
@@ -36,14 +38,28 @@ impl Filesilly {
             .expect("tried to get filesilly instance before `init`")
     }
 
+    pub fn instance_opt() -> Option<&'static Filesilly> {
+        INSTANCE.get()
+    }
+
     pub fn platform() -> &'static os::FilesillyPlatform {
         let instance = Self::instance();
         &instance.platform
     }
 
+    pub fn platform_opt() -> Option<&'static os::FilesillyPlatform> {
+        let instance = Self::instance_opt()?;
+        Some(&instance.platform)
+    }
+
     pub fn factory() -> &'static dyn StreamFactory {
         let instance = Self::instance();
         &*instance.factory
+    }
+
+    pub fn factory_opt() -> Option<&'static dyn StreamFactory> {
+        let instance = Self::instance_opt()?;
+        Some(&*instance.factory)
     }
 }
 
