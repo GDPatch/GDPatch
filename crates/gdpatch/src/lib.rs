@@ -176,8 +176,14 @@ impl GDPatch {
             .unwrap_or_default();
 
         {
+            // FIXME this isn't right
             let current_exe = current_exe()?;
-            let base_dir = current_exe.parent().unwrap(); // TODO
+            let base_dir = current_exe.parent().unwrap();
+
+            // On macOS, the pack is stored in the Resources directory.
+            #[cfg(target_os = "macos")]
+            let base_dir = base_dir.parent().unwrap();
+
             let factory = Box::new(GDPatchStreamFactory(pack_config.clone()));
             filesilly::init(&[base_dir], factory)?;
         }
