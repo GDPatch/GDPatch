@@ -48,18 +48,8 @@ pub enum IpcCommand {
         line: i64,
         code: String,
         rationale: String,
-        error_type: ErrorType,
+        error_type: i64,
     },
-}
-
-#[derive(Deserialize)]
-pub enum ErrorType {
-    Error = 0,
-    Warning = 1,
-    Script = 2,
-    Shader = 3,
-    #[serde(other)]
-    Unknown = -1,
 }
 
 #[derive(Serialize)]
@@ -161,20 +151,20 @@ impl IpcStream {
                 let rationale = rationale.trim();
 
                 match error_type {
-                    ErrorType::Error => {
+                    0 => {
                         tracing::error!(target: "error", function, file, line, code, "{rationale}")
                     }
-                    ErrorType::Warning => {
+                    1 => {
                         tracing::warn!(target: "warning", function, file, line, code, "{rationale}")
                     }
-                    ErrorType::Script => {
+                    2 => {
                         tracing::error!(target: "script", function, file, line, code, "{rationale}")
                     }
-                    ErrorType::Shader => {
+                    3 => {
                         tracing::error!(target: "shader", function, file, line, code, "{rationale}")
                     }
-                    ErrorType::Unknown => {
-                        tracing::error!(target: "unknown", function, file, line, code, "{rationale}")
+                    error_type => {
+                        tracing::error!(target: "unknown", error_type, function, file, line, code, "{rationale}")
                     }
                 }
             }
