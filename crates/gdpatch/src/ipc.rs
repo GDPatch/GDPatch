@@ -38,6 +38,28 @@ pub enum IpcCommand {
         option: String,
         value: Option<toml::Value>,
     },
+    LogMessage {
+        level: String,
+        message: String,
+    },
+    LogError {
+        function: String,
+        file: String,
+        line: i64,
+        code: String,
+        rationale: String,
+        error_type: ErrorType,
+    },
+}
+
+#[derive(Deserialize)]
+pub enum ErrorType {
+    Error = 0,
+    Warning = 1,
+    Script = 2,
+    Shader = 3,
+    #[serde(other)]
+    Unknown = -1,
 }
 
 #[derive(Serialize)]
@@ -113,6 +135,48 @@ impl IpcStream {
             } => {
                 let gdpatch = GDPatch::instance();
                 gdpatch.set_config_option(&mod_id, &section, &option, value)?;
+            }
+            IpcCommand::LogMessage { level, message } => {
+                let message = message.trim();
+
+                match level.to_ascii_lowercase().as_str() {
+                    "trace" => tracing::trace!(target: "godot", "{message}"),
+                    "debug" => tracing::debug!(target: "godot", "{message}"),
+                    "info" => tracing::info!(target: "godot", "{message}"),
+                    "warn" => tracing::warn!(target: "godot", "{message}"),
+                    "error" => tracing::error!(target: "godot", "{message}"),
+                    level => {
+                        tracing::error!(target: "godot", invalid_log_level = level, "{message}")
+                    }
+                }
+            }
+            IpcCommand::LogError {
+                function,
+                file,
+                line,
+                code,
+                rationale,
+                error_type,
+            } => {
+                let rationale = rationale.trim();
+
+                match error_type {
+                    ErrorType::Error => {
+                        tracing::error!(target: "error", function, file, line, code, "{rationale}")
+                    }
+                    ErrorType::Warning => {
+                        tracing::warn!(target: "warning", function, file, line, code, "{rationale}")
+                    }
+                    ErrorType::Script => {
+                        tracing::error!(target: "script", function, file, line, code, "{rationale}")
+                    }
+                    ErrorType::Shader => {
+                        tracing::error!(target: "shader", function, file, line, code, "{rationale}")
+                    }
+                    ErrorType::Unknown => {
+                        tracing::error!(target: "unknown", function, file, line, code, "{rationale}")
+                    }
+                }
             }
         }
 
