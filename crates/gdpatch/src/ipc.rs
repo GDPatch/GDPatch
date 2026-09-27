@@ -218,7 +218,17 @@ impl Write for IpcStream {
             && let Some(pos) = str.find('\n')
         {
             let line = &str[..pos];
-            let line = line.to_owned();
+            let invalids = line.match_indices(
+                |character| matches!(character, '\u{00}'..='\u{1F}' | '\u{7F}'..='\u{9F}'),
+            );
+
+            let mut line = line.to_owned();
+
+            for (index, invalid) in invalids.rev() {
+                // `matches!(...)` above is restricted to single-byte characters.
+                let byte = invalid.as_bytes()[0];
+                line.replace_range(index..(index + invalid.len()), &format!("\\u{byte:04x}"));
+            }
 
             if !line.is_empty()
                 && let Err(err) = self.process_command(&line)
