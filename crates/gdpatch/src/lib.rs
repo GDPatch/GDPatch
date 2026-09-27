@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use tracing::{debug, debug_span, error, info, info_span, level_filters::LevelFilter, warn};
 use tracing_error::ErrorLayer;
+use tracing_subscriber::filter::Targets;
 use tracing_subscriber::prelude::*;
 
 mod bindings;
@@ -235,7 +236,9 @@ impl GDPatch {
             .with_writer(tracing_appender::rolling::never(log_directory, log_file))
             .with_ansi(false);
 
-        let stdout_layer = tracing_subscriber::fmt::layer().with_ansi(self.config.log.console_ansi);
+        let stdout_layer = tracing_subscriber::fmt::layer()
+            .with_ansi(self.config.log.console_ansi)
+            .with_filter(Targets::new().with_target("godot", LevelFilter::OFF));
 
         tracing_subscriber::registry()
             .with(ErrorLayer::default())
