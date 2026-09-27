@@ -45,11 +45,6 @@ func _register_script_logger() -> void:
       # Hiding `OS.add_logger(...)` inside this dynamic script method means the parser won't fail on older Godot
       # versions that are missing `OS.add_logger(...)`.
       logger.register()
-      print_debug("GDPatch script logger initialised.")
-    else:
-      push_error("GDPatch script logger failed to initialise.")
-  else:
-    print_debug("GDPatch script logger not initialised: unsupported Godot version.")
 
 func _send_command_with_response(req):
   var this_seq = seq
