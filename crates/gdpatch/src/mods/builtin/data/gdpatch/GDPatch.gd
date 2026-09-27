@@ -35,16 +35,7 @@ func _register_script_logger() -> void:
   var version := Engine.get_version_info()
 
   if version.major == 4 and version.minor >= 5:
-    var script := GDScript.new()
-
-    script.source_code = _LOGGER
-
-    if script.reload() == OK:
-      var logger = script.new()
-
-      # Hiding `OS.add_logger(...)` inside this dynamic script method means the parser won't fail on older Godot
-      # versions that are missing `OS.add_logger(...)`.
-      logger.register()
+    load("res://gdpatch/logger.gd").new().register()
 
 func _send_command_with_response(req):
   var this_seq = seq
@@ -170,18 +161,3 @@ func log_error(function: String, file: String, line: int, code: String, rational
     "rationale": rationale,
     "error_type": error_type
   })
-
-# Dynamically loaded, because older Godot versions don't have `Logger`, and so script parsing would fail.
-const _LOGGER := """
-extends Logger
-
-func _log_message(message: String, error: bool) -> void:
-  GDPatch.log_message("error" if error else "info", message)
-
-func _log_error(function: String, file: String, line: int, code: String, rationale: String, _editor_notify: bool,
-    error_type: ErrorType, _script_backtraces: Array[ScriptBacktrace]) -> void:
-  GDPatch.log_error(function, file, line, code, rationale, error_type)
-
-func register() -> void:
-  OS.add_logger(self)
-"""
