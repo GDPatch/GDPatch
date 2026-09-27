@@ -1,7 +1,9 @@
 //! Handles sending messages between the Rust component and GDScript autoload.
 use crate::{GDPatch, mods::ModInfo};
+use color_eyre::eyre::bail;
 use filesilly::Stream;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use std::{
     collections::VecDeque,
     io::{Cursor, Read, Seek, Write},
@@ -9,6 +11,19 @@ use std::{
 };
 
 pub const IPC_FILENAME: &str = "gdpatch-ipc";
+
+macro_rules! log {
+    (target: $target:literal, $level:ident, $message:literal) => {
+        use tracing::Level;
+        match Level::from_str(&$level)? {
+            Level::TRACE => tracing::trace!(target: $target, $message),
+            Level::DEBUG => tracing::debug!(target: $target, $message),
+            Level::INFO => tracing::info!(target: $target, $message),
+            Level::WARN => tracing::warn!(target: $target, $message),
+            Level::ERROR => tracing::error!(target: $target, $message),
+        }
+    };
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct Sequenced<T> {
@@ -128,17 +143,7 @@ impl IpcStream {
             }
             IpcCommand::LogMessage { level, message } => {
                 let message = message.trim();
-
-                match level.to_ascii_lowercase().as_str() {
-                    "trace" => tracing::trace!(target: "godot", "{message}"),
-                    "debug" => tracing::debug!(target: "godot", "{message}"),
-                    "info" => tracing::info!(target: "godot", "{message}"),
-                    "warn" => tracing::warn!(target: "godot", "{message}"),
-                    "error" => tracing::error!(target: "godot", "{message}"),
-                    level => {
-                        tracing::error!(target: "godot", invalid_log_level = level, "{message}")
-                    }
-                }
+                log!(target: "godot", level, "{message}");
             }
             IpcCommand::LogError {
                 function,
@@ -149,23 +154,20 @@ impl IpcStream {
                 error_type,
             } => {
                 let rationale = rationale.trim();
+                let error_type = match error_type {
+                    0 => "error",
+                    1 => "warning",
+                    2 => "script",
+                    3 => "shader",
+                    ty => {
+                        bail!("unknown error type: {ty}");
+                    }
+                };
 
-                match error_type {
-                    0 => {
-                        tracing::error!(target: "error", function, file, line, code, "{rationale}")
-                    }
-                    1 => {
-                        tracing::warn!(target: "warning", function, file, line, code, "{rationale}")
-                    }
-                    2 => {
-                        tracing::error!(target: "script", function, file, line, code, "{rationale}")
-                    }
-                    3 => {
-                        tracing::error!(target: "shader", function, file, line, code, "{rationale}")
-                    }
-                    error_type => {
-                        tracing::error!(target: "unknown", error_type, function, file, line, code, "{rationale}")
-                    }
+                if error_type == "warning" {
+                    tracing::warn!(target: "godot", error_type, function, file, line, code, "{rationale}");
+                } else {
+                    tracing::error!(target: "godot", error_type, function, file, line, code, "{rationale}");
                 }
             }
         }
