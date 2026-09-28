@@ -218,6 +218,9 @@ impl Write for IpcStream {
             && let Some(pos) = str.find('\n')
         {
             let line = &str[..pos];
+
+            // Godot's JSON stringification misses some spec-required escaping, so check before
+            // passing to Serde; see: https://github.com/godotengine/godot/issues/109482
             let invalids = line.match_indices(
                 |character| matches!(character, '\u{00}'..='\u{1F}' | '\u{7F}'..='\u{9F}'),
             );
