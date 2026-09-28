@@ -197,7 +197,9 @@ impl GDPatch {
                 }
             };
 
-        info!(count = %mods.0.len(), "Mods loaded!");
+        // Subtract one for the builtin mod.
+        let mod_count = mods.0.len() - 1;
+        info!(count = mod_count, "Mods loaded!");
 
         for r#mod in mods.0.values() {
             debug!(
