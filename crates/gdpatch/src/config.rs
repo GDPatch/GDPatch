@@ -34,6 +34,10 @@ pub struct ConfigLog {
     /// Whether to use colored logs (using ANSI formatting) in the GDPatch console.
     /// This may not work correctly under Wine or Proton.
     pub console_ansi: bool,
+
+    /// Whether to include logs from the game and Godot in the log file.
+    /// This feature only works on Godot 4.5 and up.
+    pub include_godot: bool,
 }
 
 impl Default for ConfigLog {
@@ -42,6 +46,7 @@ impl Default for ConfigLog {
             level: LogLevel::Info,
             console: false,
             console_ansi: true,
+            include_godot: true,
         }
     }
 }

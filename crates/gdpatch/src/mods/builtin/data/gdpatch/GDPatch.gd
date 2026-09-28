@@ -13,7 +13,8 @@ func _init() -> void:
   self.mutex = Mutex.new()
   self.file = FileAccess.open("gdpatch-ipc", FileAccess.READ_WRITE)
 
-  self._register_script_logger()
+  if self.get_config_option("gdpatch", "log", "include_godot"):
+    self._register_script_logger()
 
   var mod_list = self._send_command_with_response({
     "type": "GetModList"
