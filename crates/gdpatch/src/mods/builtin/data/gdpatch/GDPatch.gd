@@ -13,6 +13,8 @@ func _init() -> void:
   self.mutex = Mutex.new()
   self.file = FileAccess.open("gdpatch-ipc", FileAccess.READ_WRITE)
 
+  self._register_script_logger()
+
   var mod_list = self._send_command_with_response({
     "type": "GetModList"
   })
@@ -28,6 +30,12 @@ func _ready() -> void:
     var mod_id = mod["id"]
     if mod_id != BUILTIN_MOD:
       self._load_mod(mod_id)
+
+func _register_script_logger() -> void:
+  var version := Engine.get_version_info()
+
+  if version.major == 4 and version.minor >= 5:
+    load("res://gdpatch/logger.gd").new().register()
 
 func _send_command_with_response(req):
   var this_seq = seq
@@ -134,4 +142,22 @@ func set_config_option(mod_id: String, section: String, option: String, value):
     "section": section,
     "option": option,
     "value": value
+  })
+
+func log_message(level: String, message: String) -> void:
+  self._send_command({
+    "type": "LogMessage",
+    "level": level,
+    "message": message
+  })
+
+func log_error(function: String, file: String, line: int, code: String, rationale: String, error_type: int) -> void:
+  self._send_command({
+    "type": "LogError",
+    "function": function,
+    "file": file,
+    "line": line,
+    "code": code,
+    "rationale": rationale,
+    "error_type": error_type
   })

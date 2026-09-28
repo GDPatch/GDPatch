@@ -1,7 +1,9 @@
 //! Handles sending messages between the Rust component and GDScript autoload.
 use crate::{GDPatch, mods::ModInfo};
+use color_eyre::eyre::bail;
 use filesilly::Stream;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use std::{
     collections::VecDeque,
     io::{Cursor, Read, Seek, Write},
@@ -9,6 +11,19 @@ use std::{
 };
 
 pub const IPC_FILENAME: &str = "gdpatch-ipc";
+
+macro_rules! log {
+    (target: $target:literal, $level:ident, $message:literal) => {
+        use tracing::Level;
+        match Level::from_str(&$level)? {
+            Level::TRACE => tracing::trace!(target: $target, $message),
+            Level::DEBUG => tracing::debug!(target: $target, $message),
+            Level::INFO => tracing::info!(target: $target, $message),
+            Level::WARN => tracing::warn!(target: $target, $message),
+            Level::ERROR => tracing::error!(target: $target, $message),
+        }
+    };
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct Sequenced<T> {
@@ -37,6 +52,18 @@ pub enum IpcCommand {
         section: String,
         option: String,
         value: Option<toml::Value>,
+    },
+    LogMessage {
+        level: String,
+        message: String,
+    },
+    LogError {
+        function: String,
+        file: String,
+        line: i64,
+        code: String,
+        rationale: String,
+        error_type: i64,
     },
 }
 
@@ -114,6 +141,35 @@ impl IpcStream {
                 let gdpatch = GDPatch::instance();
                 gdpatch.set_config_option(&mod_id, &section, &option, value)?;
             }
+            IpcCommand::LogMessage { level, message } => {
+                let message = message.trim();
+                log!(target: "godot", level, "{message}");
+            }
+            IpcCommand::LogError {
+                function,
+                file,
+                line,
+                code,
+                rationale,
+                error_type,
+            } => {
+                let rationale = rationale.trim();
+                let error_type = match error_type {
+                    0 => "error",
+                    1 => "warning",
+                    2 => "script",
+                    3 => "shader",
+                    ty => {
+                        bail!("unknown error type: {ty}");
+                    }
+                };
+
+                if error_type == "warning" {
+                    tracing::warn!(target: "godot", error_type, function, file, line, code, "{rationale}");
+                } else {
+                    tracing::error!(target: "godot", error_type, function, file, line, code, "{rationale}");
+                }
+            }
         }
 
         Ok(())
@@ -162,7 +218,20 @@ impl Write for IpcStream {
             && let Some(pos) = str.find('\n')
         {
             let line = &str[..pos];
-            let line = line.to_owned();
+
+            // Godot's JSON stringification misses some spec-required escaping, so check before
+            // passing to Serde; see: https://github.com/godotengine/godot/issues/109482
+            let invalids = line.match_indices(
+                |character| matches!(character, '\u{00}'..='\u{1F}' | '\u{7F}'..='\u{9F}'),
+            );
+
+            let mut line = line.to_owned();
+
+            for (index, invalid) in invalids.rev() {
+                // `matches!(...)` above is restricted to single-byte characters.
+                let byte = invalid.as_bytes()[0];
+                line.replace_range(index..(index + invalid.len()), &format!("\\u{byte:04x}"));
+            }
 
             if !line.is_empty()
                 && let Err(err) = self.process_command(&line)
