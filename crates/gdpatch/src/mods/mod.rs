@@ -174,7 +174,14 @@ impl Mods {
         fs: &dyn ModLoaderFs,
         configs_directory: &Path,
         pack_config: PackConfig,
-    ) -> color_eyre::Result<Mod> {
+    ) -> color_eyre::Result<Option<Mod>> {
+        // Ignore mods with a `gdpatch_disabled` file in their mod directory.
+        // This is used by mod managers like r2modman.
+        let gdpatch_disabled_path = PathBuf::from("gdpatch_disabled");
+        if fs.exists(&gdpatch_disabled_path)? {
+            return Ok(None);
+        }
+
         // Check for a `gdpatch_mod.toml` file.
         let mod_info_path = PathBuf::from("gdpatch_mod.toml");
         if !fs.exists(&mod_info_path)? {
@@ -233,13 +240,13 @@ impl Mods {
         let config_path = configs_directory.join(format!("{}.toml", mod_info.id));
         let config = ModConfig::new(config_path, mod_info.config.clone().unwrap_or_default());
 
-        Ok(Mod {
+        Ok(Some(Mod {
             root_directory: fs.root(),
             info: mod_info,
             patcher,
             pack,
             config,
-        })
+        }))
     }
 
     /// Searches for mod folders in the given directory and loads their metadata/patchers/etc.
@@ -282,9 +289,11 @@ impl Mods {
             let fs = ModLoaderMapFs::new(fs);
 
             match Mods::read_mod_from_directory(&fs, configs_directory, pack_config.clone()) {
-                Ok(r#mod) => {
+                Ok(Some(r#mod)) => {
                     mods.insert(r#mod.info.id.clone(), r#mod);
                 }
+
+                Ok(None) => {}
 
                 Err(err) => {
                     tracing::error!(?err, "failed to load builtin mod");
@@ -313,7 +322,7 @@ impl Mods {
 
             let fs = ModLoaderFolderFs::new(candidate_path.clone());
             match Mods::read_mod_from_directory(&fs, configs_directory, pack_config.clone()) {
-                Ok(r#mod) => {
+                Ok(Some(r#mod)) => {
                     if mods.contains_key(&r#mod.info.id) {
                         tracing::warn!(
                             mod_id = r#mod.info.id,
@@ -324,6 +333,7 @@ impl Mods {
 
                     mods.insert(r#mod.info.id.clone(), r#mod);
                 }
+                Ok(None) => {}
                 Err(err) => {
                     let relative_path = relative_path.display();
                     tracing::error!(?err, %relative_path, "failed to load mod");
