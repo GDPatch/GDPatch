@@ -240,7 +240,11 @@ impl GDPatch {
 
         let stdout_layer = tracing_subscriber::fmt::layer()
             .with_ansi(self.config.log.console_ansi)
-            .with_filter(Targets::new().with_target("godot", LevelFilter::OFF));
+            .with_filter(
+                Targets::new()
+                    .with_default(level_layer)
+                    .with_target("godot", LevelFilter::OFF),
+            );
 
         tracing_subscriber::registry()
             .with(ErrorLayer::default())
