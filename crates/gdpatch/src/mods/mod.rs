@@ -289,11 +289,10 @@ impl Mods {
             let fs = ModLoaderMapFs::new(fs);
 
             match Mods::read_mod_from_directory(&fs, configs_directory, pack_config.clone()) {
-                Ok(Some(r#mod)) => {
+                Ok(r#mod) => {
+                    let r#mod = r#mod.expect("built-in mod should never be disabled");
                     mods.insert(r#mod.info.id.clone(), r#mod);
                 }
-
-                Ok(None) => {}
 
                 Err(err) => {
                     tracing::error!(?err, "failed to load builtin mod");
@@ -333,7 +332,14 @@ impl Mods {
 
                     mods.insert(r#mod.info.id.clone(), r#mod);
                 }
-                Ok(None) => {}
+                Ok(None) => {
+                    let mod_folder = candidate_path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_str()
+                        .unwrap_or_default();
+                    tracing::info!(mod_folder, "skipping disabled mod");
+                }
                 Err(err) => {
                     let relative_path = relative_path.display();
                     tracing::error!(?err, %relative_path, "failed to load mod");
