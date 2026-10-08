@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="dotnet/GDPatchSharp.Loader/GDPatchSharp.Loader.csproj" />
+  <Project Path="dotnet/GDPatchSharp/GDPatchSharp.csproj" />
+</Solution>

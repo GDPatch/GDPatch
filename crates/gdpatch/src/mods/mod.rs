@@ -81,6 +81,10 @@ pub struct ModInfo {
     /// This is the only required field in the mod info.
     pub id: String,
 
+    /// The filename of the assembly in the `dotnet` directory, if this mod includes a .NET assembly.
+    /// This path is relative to the `dotnet` directory in the mod, so `ExampleMod.dll` resolves to `(mod folder)/dotnet/ExampleMod.dll`.
+    pub dotnet_assembly: Option<String>,
+
     /// Human-readable metadata about this mod.
     pub meta: Option<ModMeta>,
 

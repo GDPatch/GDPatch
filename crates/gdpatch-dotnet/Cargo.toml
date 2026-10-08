@@ -1,0 +1,16 @@
+[package]
+name = "gdpatch-dotnet"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+filesilly.workspace = true
+thiserror.workspace = true
+include_dir.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true
+retour.workspace = true
+widestring.workspace = true
