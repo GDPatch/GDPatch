@@ -1,6 +1,8 @@
 pub mod builder;
 
+use gdpatch_godot::pack::{Pack, PackedFile};
 use memmap2::Mmap;
+use std::borrow::Cow;
 use std::cmp::min;
 use std::sync::Arc;
 use std::{io, slice};
@@ -28,6 +30,25 @@ pub enum FileContents {
 }
 
 impl FileContents {
+    /// Returns the contents of a packed file.
+    pub fn packed_file(&self, pack: &Pack, file: &PackedFile) -> gdpatch_godot::Result<Self> {
+        match pack.file_data(self.as_slice(), file)? {
+            Cow::Owned(data) => Ok(Self::Memory(data)),
+            Cow::Borrowed(data) => match self {
+                Self::Disk {
+                    mapping, offset, ..
+                } => Ok(Self::Disk {
+                    mapping: mapping.clone(),
+                    offset: offset
+                        .checked_add(file.offset)
+                        .ok_or(gdpatch_godot::Error::BadData)?,
+                    len: file.size,
+                }),
+                Self::Memory(_) => Ok(Self::Memory(data.to_vec())),
+            },
+        }
+    }
+
     pub fn as_slice(&self) -> &[u8] {
         match &self {
             FileContents::Disk {

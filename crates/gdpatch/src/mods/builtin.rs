@@ -40,6 +40,7 @@ pub fn create_builtin_mod() -> color_eyre::Result<HashMap<String, Vec<u8>>> {
             authors: Vec::new(),
         }),
         config: None, // TODO
+        game: None,
     };
     let mod_info = toml::to_string(&mod_info)?;
     result.insert("gdpatch_mod.toml".to_string(), mod_info.as_bytes().to_vec());

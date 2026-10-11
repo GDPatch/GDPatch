@@ -195,8 +195,20 @@ impl Read for PackStream {
                                     debug!(file_count = %pack.files.len(), "found PCK file!");
 
                                     let gdpatch = GDPatch::instance();
-                                    let virtual_pack =
-                                        gdpatch.create_virtual_pack(path, file, pack, offset);
+                                    let virtual_pack = match gdpatch.create_virtual_pack(
+                                        path.clone(),
+                                        &file,
+                                        pack,
+                                        offset,
+                                    ) {
+                                        Ok(pack) => pack,
+                                        Err(err) => {
+                                            warn!(?err, path = %path.display(), "failed to patch PCK; leaving original pack available to Godot");
+                                            file.seek(SeekFrom::Start(offset + n as u64))?;
+                                            self.0 = PackStreamInner::SomethingElse(file);
+                                            return Ok(n);
+                                        }
+                                    };
 
                                     self.0 = PackStreamInner::Virtual(OpenVirtualPack::new(
                                         virtual_pack,

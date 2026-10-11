@@ -35,6 +35,20 @@ pub enum Error {
     #[error("unsupported/unknown version {}", .0)]
     UnknownVersion(u32),
 
+    #[error(
+        "encrypted PCK requires a key; set [game].encryption_key in gdpatch_mod.toml, [engine].encryption_key in GDPatch/config.toml, or GDPATCH_ENCRYPTION_KEY"
+    )]
+    MissingEncryptionKey,
+
+    #[error("encryption key must contain exactly 64 hexadecimal characters (256 bits)")]
+    InvalidEncryptionKey,
+
+    #[error("PCK decryption checksum mismatch: incorrect encryption key or corrupt data")]
+    DecryptionFailed,
+
+    #[error("sparse PCK bundles are currently unsupported")]
+    UnsupportedSparsePack,
+
     #[error("an i/o error occurred: {}", .0)]
     Io(#[from] std::io::Error),
 }

@@ -27,6 +27,9 @@ byteorder.workspace = true
 tracing.workspace = true
 zmij.workspace = true
 indexmap.workspace = true
+aes.workspace = true
+cfb-mode.workspace = true
+md-5.workspace = true
 
 [dev-dependencies]
 serde.workspace = true

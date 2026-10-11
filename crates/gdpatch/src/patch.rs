@@ -3,7 +3,7 @@ use crate::{
     mods::{Mods, lua::PatcherCallbacks},
     virtual_pack::{FileContents, builder::VirtualPackBuilder},
 };
-use color_eyre::eyre::Context as _;
+use color_eyre::eyre::{Context as _, OptionExt as _};
 use gdpatch_godot::{
     ReadableMarshalBuffer, UIDCache, WritableMarshalBuffer,
     build::{EngineBuild, GDScriptBuild, GDScriptV2Build},
@@ -111,7 +111,19 @@ impl<'a> Patcher<'a> {
         )
     }
 
-    fn parse_project_settings(&mut self) -> ProjectSettings {
+    fn read_file(
+        &self,
+        file: &gdpatch_godot::pack::PackedFile,
+    ) -> color_eyre::Result<FileContents> {
+        let contents = FileContents::Disk {
+            mapping: self.mapping.clone(),
+            offset: 0,
+            len: self.mapping.len() as u64,
+        };
+        Ok(contents.packed_file(self.old_pack, file)?)
+    }
+
+    fn parse_project_settings(&mut self) -> color_eyre::Result<ProjectSettings> {
         // TODO: support using a pre-existing project settings for games with multiple pack files
         let project_settings = {
             let path = self.ensure_path_prefix(ProjectSettings::PROJECT_SETTINGS_PATH);
@@ -120,18 +132,14 @@ impl<'a> Patcher<'a> {
                 .old_pack
                 .files
                 .get(&path)
-                .expect("project settings file is missing");
+                .ok_or_eyre("project settings file is missing")?;
 
-            let contents = FileContents::Disk {
-                mapping: self.mapping.clone(),
-                offset: file.offset,
-                len: file.size,
-            };
+            let contents = self.read_file(file).wrap_err("reading project settings")?;
 
             let slice = contents.as_slice();
 
             let mut buf = ReadableMarshalBuffer::new(slice, true);
-            ProjectSettings::parse_binary(&mut buf).expect("failed to parse project settings")
+            ProjectSettings::parse_binary(&mut buf).wrap_err("failed to parse project settings")?
         };
 
         // Update some flags based off of the project settings.
@@ -152,7 +160,7 @@ impl<'a> Patcher<'a> {
             })
             .unwrap_or(true);
 
-        project_settings
+        Ok(project_settings)
     }
 
     /// Check if this path needs to be specially merged together.
@@ -332,7 +340,7 @@ impl<'a> Patcher<'a> {
     }
 
     pub fn run(mut self) -> color_eyre::Result<VirtualPackBuilder> {
-        let project_settings = self.parse_project_settings();
+        let project_settings = self.parse_project_settings()?;
 
         let gdscript_build = match self.engine_build.gdscript {
             GDScriptBuild::V2(ref v2) => v2.clone(),
@@ -344,11 +352,9 @@ impl<'a> Patcher<'a> {
             let normalized_path = self.strip_path_prefix(path);
             let _entered = info_span!("pack_entry", path = %normalized_path).entered();
 
-            let contents = FileContents::Disk {
-                mapping: self.mapping.clone(),
-                offset: file.offset,
-                len: file.size,
-            };
+            let contents = self
+                .read_file(file)
+                .wrap_err_with(|| format!("reading game pack entry {path}"))?;
             let slice = contents.as_slice();
 
             match self.merge_special_file(&normalized_path, slice) {
@@ -419,7 +425,7 @@ impl<'a> Patcher<'a> {
                 None => continue,
             };
 
-            for (mut path, contents) in mod_pack.files() {
+            for (mut path, contents) in mod_pack.files()? {
                 let _entered = info_span!("mod_pack_entry", path = %path).entered();
 
                 // Add/remove res:// prefix if required.

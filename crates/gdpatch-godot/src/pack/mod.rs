@@ -1,16 +1,19 @@
 //! Godot PCK file format parsers etc.
 
 mod builder;
+mod encryption;
 
 use crate::Error;
 use byteorder::{LittleEndian, ReadBytesExt};
 use core::str;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Seek, SeekFrom};
+use std::borrow::Cow;
+use std::io::{Cursor, Read, Seek, SeekFrom};
 use tracing::error;
 
 pub use self::builder::PackBuilder;
+pub use self::encryption::EncryptionKey;
 
 const PACK_DIR_ENCRYPTED: u32 = 1 << 0;
 const PACK_REL_FILEBASE: u32 = 1 << 1;
@@ -30,6 +33,9 @@ const PACK_FILE_DELTA: u32 = 1 << 2;
 pub struct PackConfig {
     /// The magic constant present in the header of pack files.
     pck_header_magic: Option<String>,
+
+    /// The game's 256-bit export key, written as 64 hexadecimal characters.
+    pub encryption_key: Option<EncryptionKey>,
 }
 
 impl PackConfig {
@@ -74,6 +80,7 @@ pub struct PackedFile {
 
 #[derive(Debug)]
 pub struct Pack {
+    encryption_key: Option<EncryptionKey>,
     /// The version of the pack format this pack is using.
     pub format: PackFormat,
 
@@ -124,13 +131,17 @@ impl Pack {
         let enc_directory = (pack_flags & PACK_DIR_ENCRYPTED) != 0;
         let rel_filebase = (pack_flags & PACK_REL_FILEBASE) != 0; // Note: Always enabled for V3.
         let sparse_bundle = (pack_flags & PACK_SPARSE_BUNDLE) != 0;
+        // Sparse bundles reference files outside the pack.
+        if sparse_bundle {
+            return Err(Error::UnsupportedSparsePack);
+        }
 
         let mut file_base = f.read_u64::<LittleEndian>()?;
         if format == PackFormat::V4
             || format == PackFormat::V3
             || (format == PackFormat::V2 && rel_filebase)
         {
-            file_base += pck_start_pos;
+            file_base = file_base.checked_add(pck_start_pos).ok_or(Error::BadData)?;
         }
 
         let mut salt = None;
@@ -146,7 +157,11 @@ impl Pack {
                 salt = Some(salt_data);
             }
 
-            f.seek(SeekFrom::Start(dir_offset + pck_start_pos))?;
+            f.seek(SeekFrom::Start(
+                dir_offset
+                    .checked_add(pck_start_pos)
+                    .ok_or(Error::BadData)?,
+            ))?;
         } else if format == PackFormat::V2 {
             // V2: Directory directly after the header.
             f.seek_relative(16 * 4)?;
@@ -155,17 +170,38 @@ impl Pack {
         // Read directory.
         let file_count = f.read_u32::<LittleEndian>()?;
 
-        if enc_directory {
-            panic!("Games using encryption are currently unsupported");
+        let mut decrypted_directory;
+        let (directory, directory_len): (&mut dyn Read, u64) = if enc_directory {
+            let key = config
+                .encryption_key
+                .as_ref()
+                .ok_or(Error::MissingEncryptionKey)?;
+            let data = encryption::decrypt(&mut f, key, None)?;
+            let len = data.len() as u64;
+            decrypted_directory = Cursor::new(data);
+            (&mut decrypted_directory, len)
+        } else {
+            let start = f.stream_position()?;
+            let end = f.seek(SeekFrom::End(0))?;
+            f.seek(SeekFrom::Start(start))?;
+            (&mut f, end.checked_sub(start).ok_or(Error::BadData)?)
+        };
+        // Each entry needs at least a length, offset, size, MD5 and flags.
+        if u64::from(file_count) > directory_len / 40 {
+            return Err(Error::BadData);
         }
+        let mut remaining = directory_len;
 
         let mut files = IndexMap::new();
         let mut deltas = IndexMap::new();
 
         for _ in 0..file_count {
-            let path_length = f.read_u32::<LittleEndian>()? as usize;
+            let path_length = directory.read_u32::<LittleEndian>()? as usize;
+            remaining = remaining
+                .checked_sub(40 + path_length as u64)
+                .ok_or(Error::BadData)?;
             let mut path_bytes = vec![0u8; path_length];
-            f.read_exact(&mut path_bytes)?;
+            directory.read_exact(&mut path_bytes)?;
             let path = str::from_utf8(&path_bytes)
                 .map_err(|err| {
                     error!(?err, "invalid utf-8 in PCK file path");
@@ -174,14 +210,17 @@ impl Pack {
                 .trim_end_matches('\0')
                 .to_string();
 
-            let offset = f.read_u64::<LittleEndian>()?;
-            let size = f.read_u64::<LittleEndian>()?;
+            let offset = directory.read_u64::<LittleEndian>()?;
+            let size = directory.read_u64::<LittleEndian>()?;
 
             let mut hash = [0u8; 16];
-            f.read_exact(&mut hash)?;
+            directory.read_exact(&mut hash)?;
 
-            let flags = f.read_u32::<LittleEndian>()?;
+            let flags = directory.read_u32::<LittleEndian>()?;
             let encrypted = (flags & PACK_FILE_ENCRYPTED) != 0;
+            if encrypted && config.encryption_key.is_none() {
+                return Err(Error::MissingEncryptionKey);
+            }
             let removal = (flags & PACK_FILE_REMOVAL) != 0;
             let delta = (flags & PACK_FILE_DELTA) != 0;
 
@@ -190,7 +229,7 @@ impl Pack {
             } else {
                 let file = PackedFile {
                     encrypted,
-                    offset: file_base + offset,
+                    offset: file_base.checked_add(offset).ok_or(Error::BadData)?,
                     size,
                     hash,
                 };
@@ -204,6 +243,7 @@ impl Pack {
         }
 
         Ok(Self {
+            encryption_key: config.encryption_key,
             format,
             engine_version: (engine_major, engine_minor, engine_patch),
             salt,
@@ -211,5 +251,26 @@ impl Pack {
             files,
             deltas,
         })
+    }
+
+    /// Read the contents of a packed file.
+    pub fn file_data<'a>(&self, data: &'a [u8], file: &PackedFile) -> crate::Result<Cow<'a, [u8]>> {
+        let offset = usize::try_from(file.offset).map_err(|_| Error::BadData)?;
+        if file.encrypted {
+            let key = self
+                .encryption_key
+                .as_ref()
+                .ok_or(Error::MissingEncryptionKey)?;
+            let data = data.get(offset..).ok_or(Error::TooShort)?;
+            Ok(Cow::Owned(encryption::decrypt(
+                &mut Cursor::new(data),
+                key,
+                Some(file.size),
+            )?))
+        } else {
+            let end = file.offset.checked_add(file.size).ok_or(Error::BadData)?;
+            let end = usize::try_from(end).map_err(|_| Error::BadData)?;
+            Ok(Cow::Borrowed(data.get(offset..end).ok_or(Error::TooShort)?))
+        }
     }
 }
