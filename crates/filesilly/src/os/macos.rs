@@ -50,14 +50,14 @@ unsafe extern "system" fn interposed_open_nocancel(
         OsStr::from_bytes(str.to_bytes())
     };
     let path: PathBuf = OsString::from(path).into();
-    let path = path.canonicalize().unwrap_or(path);
-
-    let _entered = trace_span!("open", ?path).entered();
-
     let handle_store = HANDLE_STORE.lock();
     let handle = match handle_store.try_borrow_mut() {
         Err(_) => None,
-        Ok(mut handle_store) => Some(handle_store.create(&path)),
+        Ok(mut handle_store) => {
+            let path = path.canonicalize().unwrap_or(path);
+            let _entered = trace_span!("open", ?path).entered();
+            Some(handle_store.create(&path))
+        }
     };
     drop(handle_store);
 
@@ -143,7 +143,7 @@ unsafe extern "system" fn interposed_seek(
     stream: *mut FILE,
     offset: off_t,
     whence: c_int,
-) -> off_t {
+) -> c_int {
     let fd = unsafe { libc::fileno(stream) };
     let handle = FileHandle(fd);
 
@@ -165,7 +165,7 @@ unsafe extern "system" fn interposed_seek(
             match res {
                 Ok(offset) => {
                     trace!(?offset, "seeked fake handle");
-                    offset as off_t
+                    0
                 }
                 Err(error) => {
                     error!(?error, "failed to seek fake handle");
@@ -280,7 +280,7 @@ unsafe extern "C" {
     #[link_name = "ftello"]
     unsafe fn libc_ftello(stream: *mut FILE) -> off_t;
     #[link_name = "fseeko"]
-    unsafe fn libc_fseeko(stream: *mut FILE, offset: off_t, whence: c_int) -> off_t;
+    unsafe fn libc_fseeko(stream: *mut FILE, offset: off_t, whence: c_int) -> c_int;
     #[link_name = "fread"]
     unsafe fn libc_fread(ptr: *mut c_void, size: size_t, nobj: size_t, stream: *mut FILE)
     -> size_t;
