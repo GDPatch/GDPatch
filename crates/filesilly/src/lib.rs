@@ -1,3 +1,5 @@
+#![feature(seek_stream_len)]
+
 use crate::os::FileHandle;
 use parking_lot::ReentrantMutex;
 use std::cell::RefCell;
@@ -27,12 +29,7 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Trait returned by [`StreamFactory`] to allow proxying game file reads/writes.
-pub trait Stream: Read + Write + Seek + Send {
-    /// Size of the underlying file, if this stream represents a file.
-    fn file_size(&self) -> Option<u64> {
-        None
-    }
-}
+pub trait Stream: Read + Write + Seek + Send {}
 
 impl Stream for std::fs::File {}
 

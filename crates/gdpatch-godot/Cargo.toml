@@ -30,7 +30,6 @@ indexmap.workspace = true
 aes.workspace = true
 cfb-mode.workspace = true
 md-5.workspace = true
-getrandom.workspace = true
 
 [dev-dependencies]
 serde.workspace = true

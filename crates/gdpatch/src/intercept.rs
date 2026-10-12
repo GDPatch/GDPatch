@@ -304,17 +304,7 @@ impl Seek for PackStream {
     }
 }
 
-impl Stream for PackStream {
-    fn file_size(&self) -> Option<u64> {
-        match &self.0 {
-            PackStreamInner::Unknown { file, .. } | PackStreamInner::SomethingElse(file) => {
-                file.metadata().ok().map(|metadata| metadata.len())
-            }
-            PackStreamInner::Virtual(pack) => Some(pack.inner.file_size()),
-            PackStreamInner::Invalid => None,
-        }
-    }
-}
+impl Stream for PackStream {}
 
 /// Main entrypoint for GDPatch patching functionality. Handles patching Godot packs in memory, as
 /// well as direct GDScript communication via special paths.

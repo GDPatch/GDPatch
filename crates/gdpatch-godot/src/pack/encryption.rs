@@ -84,8 +84,7 @@ pub(super) fn decrypt<R: Read + Seek>(
 
 /// Encrypt a packed file or directory.
 pub(super) fn encrypt(data: &[u8], key: &EncryptionKey) -> Vec<u8> {
-    let mut iv = [0; 16];
-    getrandom::fill(&mut iv).expect("failed to generate encryption IV");
+    let iv = [0; 16];
 
     let mut encrypted = data.to_vec();
     encrypted.resize(data.len().next_multiple_of(16), 0);
