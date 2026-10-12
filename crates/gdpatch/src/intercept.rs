@@ -51,12 +51,15 @@ impl Seek for OpenVirtualPack {
                     ))
                 }
             },
-            SeekFrom::End(_) => {
-                error!("game tried to seek from end of PCK");
-                Err(io::Error::new(
-                    ErrorKind::Unsupported,
-                    "seeking from end is unsupported",
-                ))
+            SeekFrom::End(n) => {
+                let position = self
+                    .inner
+                    .file_size()
+                    .checked_add_signed(n)
+                    .ok_or_else(|| {
+                        io::Error::new(ErrorKind::InvalidInput, "invalid seek from end of pack")
+                    })?;
+                self.seek(SeekFrom::Start(position))
             }
             SeekFrom::Current(n) => match self
                 .pos
@@ -195,20 +198,8 @@ impl Read for PackStream {
                                     debug!(file_count = %pack.files.len(), "found PCK file!");
 
                                     let gdpatch = GDPatch::instance();
-                                    let virtual_pack = match gdpatch.create_virtual_pack(
-                                        path.clone(),
-                                        &file,
-                                        pack,
-                                        offset,
-                                    ) {
-                                        Ok(pack) => pack,
-                                        Err(err) => {
-                                            warn!(?err, path = %path.display(), "failed to patch PCK; leaving original pack available to Godot");
-                                            file.seek(SeekFrom::Start(offset + n as u64))?;
-                                            self.0 = PackStreamInner::SomethingElse(file);
-                                            return Ok(n);
-                                        }
-                                    };
+                                    let virtual_pack =
+                                        gdpatch.create_virtual_pack(path, file, pack, offset);
 
                                     self.0 = PackStreamInner::Virtual(OpenVirtualPack::new(
                                         virtual_pack,
@@ -313,7 +304,17 @@ impl Seek for PackStream {
     }
 }
 
-impl Stream for PackStream {}
+impl Stream for PackStream {
+    fn file_size(&self) -> Option<u64> {
+        match &self.0 {
+            PackStreamInner::Unknown { file, .. } | PackStreamInner::SomethingElse(file) => {
+                file.metadata().ok().map(|metadata| metadata.len())
+            }
+            PackStreamInner::Virtual(pack) => Some(pack.inner.file_size()),
+            PackStreamInner::Invalid => None,
+        }
+    }
+}
 
 /// Main entrypoint for GDPatch patching functionality. Handles patching Godot packs in memory, as
 /// well as direct GDScript communication via special paths.

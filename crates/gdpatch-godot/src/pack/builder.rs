@@ -1,11 +1,15 @@
 use crate::WritableMarshalBuffer;
-use crate::pack::{PackConfig, PackFormat, PackedFile};
+use crate::pack::{
+    EncryptionKey, PACK_DIR_ENCRYPTED, PACK_FILE_ENCRYPTED, Pack, PackConfig, PackFormat,
+    PackedFile, encryption,
+};
 use indexmap::IndexMap;
 
 #[derive(Debug)]
 pub struct PackBuilder {
     format: PackFormat,
     engine_version: (u32, u32, u32),
+    encryption_key: Option<Box<EncryptionKey>>,
     pub files: IndexMap<String, PackedFile>,
 }
 
@@ -14,8 +18,18 @@ impl PackBuilder {
         PackBuilder {
             format,
             engine_version,
+            encryption_key: None,
             files: Default::default(),
         }
+    }
+
+    /// Create a builder using the format and directory encryption of an existing pack.
+    pub fn from_pack(pack: &Pack) -> Self {
+        let mut builder = Self::new(pack.format, pack.engine_version);
+        if pack.encrypted_directory {
+            builder.encryption_key = pack.encryption_key.clone();
+        }
+        builder
     }
 
     /// Encodes this pack's file directory into a buffer.
@@ -31,11 +45,20 @@ impl PackBuilder {
             directory.encode_uint64(file.size);
             directory.buffer().extend_from_slice(&file.hash);
 
-            // no flags
-            directory.encode_uint32(0);
+            directory.encode_uint32(if file.encrypted {
+                PACK_FILE_ENCRYPTED
+            } else {
+                0
+            });
         }
 
-        directory.into_inner()
+        let mut directory = directory.into_inner();
+        if let Some(key) = &self.encryption_key {
+            let encrypted = encryption::encrypt(&directory[4..], key);
+            directory.truncate(4);
+            directory.extend_from_slice(&encrypted);
+        }
+        directory
     }
 
     /// Encodes this pack's header and directory into a buffer.
@@ -56,7 +79,11 @@ impl PackBuilder {
         header.encode_uint32(self.engine_version.2);
 
         // flags
-        header.encode_uint32(0);
+        header.encode_uint32(if self.encryption_key.is_some() {
+            PACK_DIR_ENCRYPTED
+        } else {
+            0
+        });
 
         let file_base_pos = header.len();
         header.encode_uint64(0);

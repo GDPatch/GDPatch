@@ -16,18 +16,15 @@ impl FromStr for EncryptionKey {
     type Err = Error;
 
     fn from_str(value: &str) -> crate::Result<Self> {
-        if value.len() != 64 || !value.bytes().all(|c| c.is_ascii_hexdigit()) {
-            return Err(Error::InvalidEncryptionKey);
+        const INVALID_KEY: &str =
+            "encryption key must contain exactly 64 hexadecimal characters (256 bits)";
+        if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(Error::Encryption(INVALID_KEY));
         }
         let mut bytes = [0; 32];
-        for (out, pair) in bytes.iter_mut().zip(value.as_bytes().as_chunks::<2>().0) {
-            let digit = |c: u8| match c {
-                b'0'..=b'9' => c - b'0',
-                b'a'..=b'f' => c - b'a' + 10,
-                b'A'..=b'F' => c - b'A' + 10,
-                _ => unreachable!(),
-            };
-            *out = digit(pair[0]) * 16 + digit(pair[1]);
+        for (index, out) in bytes.iter_mut().enumerate() {
+            *out = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16)
+                .map_err(|_| Error::Encryption(INVALID_KEY))?;
         }
         Ok(Self(bytes))
     }
@@ -78,7 +75,26 @@ pub(super) fn decrypt<R: Read + Seek>(
     cfb_mode::Decryptor::<aes::Aes256>::new((&key.0).into(), (&iv).into()).decrypt(&mut data);
     data.truncate(length as usize);
     if Md5::digest(&data).as_slice() != hash {
-        return Err(Error::DecryptionFailed);
+        return Err(Error::Encryption(
+            "checksum mismatch: incorrect key or corrupt data",
+        ));
     }
     Ok(data)
+}
+
+/// Encrypt a packed file or directory.
+pub(super) fn encrypt(data: &[u8], key: &EncryptionKey) -> Vec<u8> {
+    let mut iv = [0; 16];
+    getrandom::fill(&mut iv).expect("failed to generate encryption IV");
+
+    let mut encrypted = data.to_vec();
+    encrypted.resize(data.len().next_multiple_of(16), 0);
+    cfb_mode::Encryptor::<aes::Aes256>::new((&key.0).into(), (&iv).into()).encrypt(&mut encrypted);
+
+    let mut output = Vec::with_capacity(40 + encrypted.len());
+    output.extend_from_slice(&Md5::digest(data));
+    output.extend_from_slice(&(data.len() as u64).to_le_bytes());
+    output.extend_from_slice(&iv);
+    output.extend_from_slice(&encrypted);
+    output
 }

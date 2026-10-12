@@ -78,9 +78,24 @@ pub struct PackedFile {
     pub hash: [u8; 16],
 }
 
+impl PackedFile {
+    /// Size of this file in the pack, including encryption metadata and padding.
+    pub fn stored_size(&self) -> u64 {
+        if self.encrypted {
+            40 + self.size.next_multiple_of(16)
+        } else {
+            self.size
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Pack {
-    encryption_key: Option<EncryptionKey>,
+    encryption_key: Option<Box<EncryptionKey>>,
+
+    /// Whether the file directory is encrypted.
+    pub encrypted_directory: bool,
+
     /// The version of the pack format this pack is using.
     pub format: PackFormat,
 
@@ -131,17 +146,13 @@ impl Pack {
         let enc_directory = (pack_flags & PACK_DIR_ENCRYPTED) != 0;
         let rel_filebase = (pack_flags & PACK_REL_FILEBASE) != 0; // Note: Always enabled for V3.
         let sparse_bundle = (pack_flags & PACK_SPARSE_BUNDLE) != 0;
-        // Sparse bundles reference files outside the pack.
-        if sparse_bundle {
-            return Err(Error::UnsupportedSparsePack);
-        }
 
         let mut file_base = f.read_u64::<LittleEndian>()?;
         if format == PackFormat::V4
             || format == PackFormat::V3
             || (format == PackFormat::V2 && rel_filebase)
         {
-            file_base = file_base.checked_add(pck_start_pos).ok_or(Error::BadData)?;
+            file_base += pck_start_pos;
         }
 
         let mut salt = None;
@@ -157,11 +168,7 @@ impl Pack {
                 salt = Some(salt_data);
             }
 
-            f.seek(SeekFrom::Start(
-                dir_offset
-                    .checked_add(pck_start_pos)
-                    .ok_or(Error::BadData)?,
-            ))?;
+            f.seek(SeekFrom::Start(dir_offset + pck_start_pos))?;
         } else if format == PackFormat::V2 {
             // V2: Directory directly after the header.
             f.seek_relative(16 * 4)?;
@@ -171,35 +178,21 @@ impl Pack {
         let file_count = f.read_u32::<LittleEndian>()?;
 
         let mut decrypted_directory;
-        let (directory, directory_len): (&mut dyn Read, u64) = if enc_directory {
-            let key = config
-                .encryption_key
-                .as_ref()
-                .ok_or(Error::MissingEncryptionKey)?;
-            let data = encryption::decrypt(&mut f, key, None)?;
-            let len = data.len() as u64;
-            decrypted_directory = Cursor::new(data);
-            (&mut decrypted_directory, len)
+        let directory: &mut dyn Read = if enc_directory {
+            let key = config.encryption_key.as_ref().ok_or(Error::Encryption(
+                "encrypted PCK requires [engine].encryption_key in GDPatch/config.toml",
+            ))?;
+            decrypted_directory = Cursor::new(encryption::decrypt(&mut f, key, None)?);
+            &mut decrypted_directory
         } else {
-            let start = f.stream_position()?;
-            let end = f.seek(SeekFrom::End(0))?;
-            f.seek(SeekFrom::Start(start))?;
-            (&mut f, end.checked_sub(start).ok_or(Error::BadData)?)
+            &mut f
         };
-        // Each entry needs at least a length, offset, size, MD5 and flags.
-        if u64::from(file_count) > directory_len / 40 {
-            return Err(Error::BadData);
-        }
-        let mut remaining = directory_len;
 
         let mut files = IndexMap::new();
         let mut deltas = IndexMap::new();
 
         for _ in 0..file_count {
             let path_length = directory.read_u32::<LittleEndian>()? as usize;
-            remaining = remaining
-                .checked_sub(40 + path_length as u64)
-                .ok_or(Error::BadData)?;
             let mut path_bytes = vec![0u8; path_length];
             directory.read_exact(&mut path_bytes)?;
             let path = str::from_utf8(&path_bytes)
@@ -218,9 +211,6 @@ impl Pack {
 
             let flags = directory.read_u32::<LittleEndian>()?;
             let encrypted = (flags & PACK_FILE_ENCRYPTED) != 0;
-            if encrypted && config.encryption_key.is_none() {
-                return Err(Error::MissingEncryptionKey);
-            }
             let removal = (flags & PACK_FILE_REMOVAL) != 0;
             let delta = (flags & PACK_FILE_DELTA) != 0;
 
@@ -229,7 +219,7 @@ impl Pack {
             } else {
                 let file = PackedFile {
                     encrypted,
-                    offset: file_base.checked_add(offset).ok_or(Error::BadData)?,
+                    offset: file_base + offset,
                     size,
                     hash,
                 };
@@ -243,7 +233,8 @@ impl Pack {
         }
 
         Ok(Self {
-            encryption_key: config.encryption_key,
+            encryption_key: config.encryption_key.map(Box::new),
+            encrypted_directory: enc_directory,
             format,
             engine_version: (engine_major, engine_minor, engine_patch),
             salt,
@@ -255,22 +246,19 @@ impl Pack {
 
     /// Read the contents of a packed file.
     pub fn file_data<'a>(&self, data: &'a [u8], file: &PackedFile) -> crate::Result<Cow<'a, [u8]>> {
-        let offset = usize::try_from(file.offset).map_err(|_| Error::BadData)?;
         if file.encrypted {
-            let key = self
-                .encryption_key
-                .as_ref()
-                .ok_or(Error::MissingEncryptionKey)?;
-            let data = data.get(offset..).ok_or(Error::TooShort)?;
+            let key = self.encryption_key.as_ref().ok_or(Error::Encryption(
+                "encrypted PCK requires [engine].encryption_key in GDPatch/config.toml",
+            ))?;
             Ok(Cow::Owned(encryption::decrypt(
-                &mut Cursor::new(data),
+                &mut Cursor::new(&data[file.offset as usize..]),
                 key,
                 Some(file.size),
             )?))
         } else {
-            let end = file.offset.checked_add(file.size).ok_or(Error::BadData)?;
-            let end = usize::try_from(end).map_err(|_| Error::BadData)?;
-            Ok(Cow::Borrowed(data.get(offset..end).ok_or(Error::TooShort)?))
+            Ok(Cow::Borrowed(
+                &data[file.offset as usize..(file.offset + file.size) as usize],
+            ))
         }
     }
 }

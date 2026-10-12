@@ -3,7 +3,7 @@ use crate::{
     mods::{Mods, lua::PatcherCallbacks},
     virtual_pack::{FileContents, builder::VirtualPackBuilder},
 };
-use color_eyre::eyre::{Context as _, OptionExt as _};
+use color_eyre::eyre::Context as _;
 use gdpatch_godot::{
     ReadableMarshalBuffer, UIDCache, WritableMarshalBuffer,
     build::{EngineBuild, GDScriptBuild, GDScriptV2Build},
@@ -111,19 +111,7 @@ impl<'a> Patcher<'a> {
         )
     }
 
-    fn read_file(
-        &self,
-        file: &gdpatch_godot::pack::PackedFile,
-    ) -> color_eyre::Result<FileContents> {
-        let contents = FileContents::Disk {
-            mapping: self.mapping.clone(),
-            offset: 0,
-            len: self.mapping.len() as u64,
-        };
-        Ok(contents.packed_file(self.old_pack, file)?)
-    }
-
-    fn parse_project_settings(&mut self) -> color_eyre::Result<ProjectSettings> {
+    fn parse_project_settings(&mut self) -> ProjectSettings {
         // TODO: support using a pre-existing project settings for games with multiple pack files
         let project_settings = {
             let path = self.ensure_path_prefix(ProjectSettings::PROJECT_SETTINGS_PATH);
@@ -132,14 +120,16 @@ impl<'a> Patcher<'a> {
                 .old_pack
                 .files
                 .get(&path)
-                .ok_or_eyre("project settings file is missing")?;
+                .expect("project settings file is missing");
 
-            let contents = self.read_file(file).wrap_err("reading project settings")?;
-
-            let slice = contents.as_slice();
+            let contents = self
+                .old_pack
+                .file_data(&self.mapping, file)
+                .expect("failed to read project settings");
+            let slice = contents.as_ref();
 
             let mut buf = ReadableMarshalBuffer::new(slice, true);
-            ProjectSettings::parse_binary(&mut buf).wrap_err("failed to parse project settings")?
+            ProjectSettings::parse_binary(&mut buf).expect("failed to parse project settings")
         };
 
         // Update some flags based off of the project settings.
@@ -160,7 +150,7 @@ impl<'a> Patcher<'a> {
             })
             .unwrap_or(true);
 
-        Ok(project_settings)
+        project_settings
     }
 
     /// Check if this path needs to be specially merged together.
@@ -340,7 +330,7 @@ impl<'a> Patcher<'a> {
     }
 
     pub fn run(mut self) -> color_eyre::Result<VirtualPackBuilder> {
-        let project_settings = self.parse_project_settings()?;
+        let project_settings = self.parse_project_settings();
 
         let gdscript_build = match self.engine_build.gdscript {
             GDScriptBuild::V2(ref v2) => v2.clone(),
@@ -348,14 +338,39 @@ impl<'a> Patcher<'a> {
         };
 
         // Rebuild files in the virtual pack.
+        let mapping = self.mapping.clone();
         for (path, file) in &self.old_pack.files {
             let normalized_path = self.strip_path_prefix(path);
             let _entered = info_span!("pack_entry", path = %normalized_path).entered();
 
-            let contents = self
-                .read_file(file)
-                .wrap_err_with(|| format!("reading game pack entry {path}"))?;
-            let slice = contents.as_slice();
+            let contents = FileContents::Disk {
+                mapping: self.mapping.clone(),
+                offset: file.offset,
+                len: file.stored_size(),
+            };
+
+            let is_script = path.ends_with(".gd") || path.ends_with(".gdc");
+            let should_patch_script = self.callbacks.has_patcher_for_script(&normalized_path)
+                || self.config.debug.patch_all_scripts;
+            let should_patch_file = self.callbacks.has_patcher_for_file(&normalized_path);
+            if file.encrypted
+                && !(is_script && should_patch_script)
+                && !(!is_script && should_patch_file)
+                && ![
+                    UIDCache::UID_CACHE_FILENAME,
+                    ClassCache::CLASS_CACHE_FILENAME,
+                    ExtensionList::EXTENSION_LIST_FILENAME,
+                ]
+                .iter()
+                .any(|name| normalized_path == self.data_dir_path(name))
+            {
+                self.new_pack
+                    .add_packed_file(path.clone(), file.clone(), contents);
+                continue;
+            }
+
+            let data = self.old_pack.file_data(&mapping, file)?;
+            let slice = data.as_ref();
 
             match self.merge_special_file(&normalized_path, slice) {
                 Ok(patched) => {
@@ -368,9 +383,6 @@ impl<'a> Patcher<'a> {
             };
 
             // Patch scripts.
-            let is_script = path.ends_with(".gd") || path.ends_with(".gdc");
-            let should_patch_script = self.callbacks.has_patcher_for_script(&normalized_path)
-                || self.config.debug.patch_all_scripts;
             if is_script && should_patch_script {
                 match self.patch_script(&normalized_path, slice, &gdscript_build) {
                     Ok(patched_data) => {
@@ -390,7 +402,7 @@ impl<'a> Patcher<'a> {
                 }
             }
 
-            if !is_script && self.callbacks.has_patcher_for_file(&normalized_path) {
+            if !is_script && should_patch_file {
                 match self.callbacks.patch_file(&normalized_path, slice) {
                     Ok(patched_data) => {
                         self.new_pack.add_file(
@@ -412,7 +424,7 @@ impl<'a> Patcher<'a> {
             // Preserve the original file.
             trace!("adding game file");
             self.new_pack
-                .add_file(path.clone(), file.size, file.hash, contents);
+                .add_packed_file(path.clone(), file.clone(), contents);
         }
 
         // Insert modded pack files.
@@ -425,7 +437,7 @@ impl<'a> Patcher<'a> {
                 None => continue,
             };
 
-            for (mut path, contents) in mod_pack.files()? {
+            for (mut path, contents) in mod_pack.files() {
                 let _entered = info_span!("mod_pack_entry", path = %path).entered();
 
                 // Add/remove res:// prefix if required.

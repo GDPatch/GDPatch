@@ -27,7 +27,12 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Trait returned by [`StreamFactory`] to allow proxying game file reads/writes.
-pub trait Stream: Read + Write + Seek + Send {}
+pub trait Stream: Read + Write + Seek + Send {
+    /// Size of the underlying file, if this stream represents a file.
+    fn file_size(&self) -> Option<u64> {
+        None
+    }
+}
 
 impl Stream for std::fs::File {}
 

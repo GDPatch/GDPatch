@@ -5,7 +5,7 @@ use crate::virtual_pack::FileContents;
 use color_eyre::eyre::{Context, Report, bail};
 use figment::Figment;
 use figment::providers::{Format, Toml};
-use gdpatch_godot::pack::{EncryptionKey, Pack, PackConfig};
+use gdpatch_godot::pack::{Pack, PackConfig};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -87,15 +87,6 @@ pub struct ModInfo {
     /// Optional metadata for the mod's config options. Config options are referenced by a section ID and option ID.
     /// The "meta" option ID is reserved to represent metadata about the section itself.
     pub config: Option<ModConfigInfo>,
-
-    /// Game-specific settings.
-    pub game: Option<ModGame>,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct ModGame {
-    /// The encryption key for the game's pack.
-    pub encryption_key: Option<EncryptionKey>,
 }
 
 pub type ModConfigInfo = IndexMap<String, IndexMap<String, ModConfigOptionMeta>>;
@@ -112,10 +103,7 @@ impl ModInfo {
 #[derive(Debug)]
 pub enum ModPack {
     /// The mod uses a direct .pck file.
-    PackFile {
-        pack: Box<Pack>,
-        mapping: FileContents,
-    },
+    PackFile { pack: Pack, mapping: FileContents },
 
     /// The mod uses a loose directory.
     LooseDir {
@@ -125,15 +113,22 @@ pub enum ModPack {
 
 impl ModPack {
     // FIXME this shit is ass and would be better served by an iter but I'm lazy
-    pub fn files(&self) -> color_eyre::Result<HashMap<String, FileContents>> {
+    pub fn files(&self) -> HashMap<String, FileContents> {
         let mut result = HashMap::new();
 
         match self {
             ModPack::PackFile { pack, mapping } => {
+                let mapping = match mapping {
+                    FileContents::Disk { mapping, .. } => mapping,
+                    _ => unimplemented!(),
+                };
+
                 for (path, file) in &pack.files {
-                    let contents = mapping
-                        .packed_file(pack, file)
-                        .wrap_err_with(|| format!("reading mod pack entry {path}"))?;
+                    let contents = FileContents::Disk {
+                        mapping: mapping.clone(),
+                        offset: file.offset,
+                        len: file.size,
+                    };
 
                     result.insert(path.clone(), contents);
                 }
@@ -146,7 +141,7 @@ impl ModPack {
             }
         }
 
-        Ok(result)
+        result
     }
 }
 
@@ -173,26 +168,6 @@ pub struct Mod {
 pub struct Mods(pub HashMap<String, Mod>);
 
 impl Mods {
-    /// Use the mods' encryption key unless one is configured by the user.
-    pub fn game_pack_config(&self, mut config: PackConfig) -> color_eyre::Result<PackConfig> {
-        if config.encryption_key.is_some() {
-            return Ok(config);
-        }
-        let mut keys = self
-            .0
-            .values()
-            .filter_map(|r#mod| r#mod.info.game.as_ref()?.encryption_key.as_ref());
-        if let Some(key) = keys.next() {
-            if keys.any(|other| other != key) {
-                bail!(
-                    "Mods specify conflicting game encryption keys; set [engine].encryption_key or GDPATCH_ENCRYPTION_KEY to override"
-                );
-            }
-            config.encryption_key = Some(key.clone());
-        }
-        Ok(config)
-    }
-
     /// Reads a mod from a directory. Errors if there is issues with the mod (e.g. invalid or
     /// missing mod info, or patcher with invalid syntax).
     fn read_mod_from_directory(
@@ -249,7 +224,7 @@ impl Mods {
             let pack = Pack::parse(cursor, pack_config).wrap_err("reading pck")?;
 
             Some(ModPack::PackFile {
-                pack: Box::new(pack),
+                pack,
                 mapping: file,
             })
         } else {

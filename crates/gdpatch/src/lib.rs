@@ -167,20 +167,15 @@ impl GDPatch {
     pub fn finish_setup(&self) -> color_eyre::Result<()> {
         info!("This is GDPatch {}, heya!", env!("CARGO_PKG_VERSION"));
 
-        let mut pack_config = self
+        // Setup file hooks.
+        let pack_config = self
             .config
             .engine
             .clone()
             .map(|e| e.pack)
             .unwrap_or_default();
-        // Figment splits field names on underscores, so read the key directly.
-        if let Some(key) = std::env::var_os("GDPATCH_ENCRYPTION_KEY") {
-            pack_config.encryption_key = Some(
-                key.to_str()
-                    .ok_or(gdpatch_godot::Error::InvalidEncryptionKey)?
-                    .parse::<gdpatch_godot::pack::EncryptionKey>()?,
-            );
-        }
+        filesilly::init()?;
+        filesilly::set(Box::new(GDPatchStreamFactory(pack_config.clone())));
 
         // Search for mods.
         let mods_directory = self.root_directory.join("mods");
@@ -220,13 +215,8 @@ impl GDPatch {
             }
         }
 
-        let pack_config = mods.game_pack_config(pack_config)?;
         let existing = self.mods.write().replace(mods);
         assert!(existing.is_none(), "ran mod initialization twice!");
-
-        // Setup file hooks after loading mod keys.
-        filesilly::init()?;
-        filesilly::set(Box::new(GDPatchStreamFactory(pack_config)));
 
         Ok(())
     }
@@ -280,15 +270,15 @@ impl GDPatch {
     pub fn create_virtual_pack(
         &self,
         path: PathBuf,
-        file: &File,
+        file: File,
         old_pack: Pack,
         header_pos_within_file: u64,
-    ) -> color_eyre::Result<Arc<VirtualPack>> {
+    ) -> Arc<VirtualPack> {
         let _entered = debug_span!("create_pack", original = %path.display()).entered();
         debug!("creating virtual pack");
 
         let old_pack = Arc::new(old_pack);
-        let mapping = unsafe { Mmap::map(file).wrap_err("mapping game pack")? };
+        let mapping = unsafe { Mmap::map(&file).expect("failed to mmap pack") };
         let mapping = Arc::new(mapping);
 
         // Initialize mod patcher callbacks.
@@ -346,7 +336,7 @@ impl GDPatch {
 
             let custom_engine = self.config.engine.clone().map(|e| e.engine);
             let engine_build = resolve_approximate_build(pack_version.clone(), custom_engine)
-                .wrap_err("failed to resolve engine build")?;
+                .expect("failed to resolve engine build");
             info!(version = %engine_build.version, "using engine build");
 
             if engine_build.version.minor != old_pack.engine_version.1
@@ -376,7 +366,8 @@ impl GDPatch {
             callbacks,
             mods,
         )
-        .run()?
+        .run()
+        .expect("failed to patch pack")
         .build(pack_config, header_pos_within_file);
         let virtual_pack = Arc::new(virtual_pack);
 
@@ -384,6 +375,6 @@ impl GDPatch {
             .write()
             .insert(path, virtual_pack.clone());
 
-        Ok(virtual_pack)
+        virtual_pack
     }
 }
