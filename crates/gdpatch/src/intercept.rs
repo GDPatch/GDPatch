@@ -51,12 +51,15 @@ impl Seek for OpenVirtualPack {
                     ))
                 }
             },
-            SeekFrom::End(_) => {
-                error!("game tried to seek from end of PCK");
-                Err(io::Error::new(
-                    ErrorKind::Unsupported,
-                    "seeking from end is unsupported",
-                ))
+            SeekFrom::End(n) => {
+                let position = self
+                    .inner
+                    .file_size()
+                    .checked_add_signed(n)
+                    .ok_or_else(|| {
+                        io::Error::new(ErrorKind::InvalidInput, "invalid seek from end of pack")
+                    })?;
+                self.seek(SeekFrom::Start(position))
             }
             SeekFrom::Current(n) => match self
                 .pos

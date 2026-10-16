@@ -1,3 +1,5 @@
+#![cfg_attr(windows, feature(seek_stream_len))]
+
 use crate::os::FileHandle;
 use parking_lot::ReentrantMutex;
 use std::cell::RefCell;

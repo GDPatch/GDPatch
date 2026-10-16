@@ -1,5 +1,5 @@
 use crate::{Error, HANDLE_STORE, HandleStore};
-use libc::{FILE, c_char, c_int, mode_t, off_t, off64_t, size_t};
+use libc::{FILE, c_char, c_int, mode_t, off64_t, size_t};
 use retour::{Function, GenericDetour, HookableWith};
 use std::{
     ffi::{CStr, OsStr, OsString},
@@ -214,12 +214,11 @@ unsafe extern "system" fn tell_detour(stream: *mut FILE) -> off64_t {
     }
 }
 
-type SeekFn =
-    unsafe extern "system" fn(stream: *mut FILE, offset: off64_t, whence: c_int) -> off64_t;
+type SeekFn = unsafe extern "system" fn(stream: *mut FILE, offset: off64_t, whence: c_int) -> c_int;
 static SEEK_HOOK: LockDetour<SeekFn> =
     LazyLock::new(|| SillyHook::new("fseeko64\0", "GLIBC_2.2.5\0", seek_detour));
 
-unsafe extern "system" fn seek_detour(stream: *mut FILE, offset: off_t, whence: c_int) -> off64_t {
+unsafe extern "system" fn seek_detour(stream: *mut FILE, offset: off64_t, whence: c_int) -> c_int {
     let fd = unsafe { libc::fileno(stream) };
     let handle = FileHandle(fd);
 
@@ -241,7 +240,7 @@ unsafe extern "system" fn seek_detour(stream: *mut FILE, offset: off_t, whence: 
             match res {
                 Ok(offset) => {
                     trace!(?offset, "seeked fake handle");
-                    offset as off64_t
+                    0
                 }
                 Err(error) => {
                     error!(?error, "failed to seek fake handle");

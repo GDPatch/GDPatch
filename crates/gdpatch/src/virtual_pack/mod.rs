@@ -168,4 +168,15 @@ impl VirtualPack {
     pub fn header_pos_within_file(&self) -> u64 {
         self.header_pos_within_file
     }
+
+    /// Size of the virtual file, including the prefix before an embedded pack.
+    pub fn file_size(&self) -> u64 {
+        self.header_pos_within_file
+            + self.header.len() as u64
+            + self
+                .entries
+                .last()
+                .map(|entry| entry.offset + entry.len())
+                .unwrap_or(0)
+    }
 }

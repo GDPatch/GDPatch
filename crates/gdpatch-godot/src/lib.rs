@@ -35,6 +35,9 @@ pub enum Error {
     #[error("unsupported/unknown version {}", .0)]
     UnknownVersion(u32),
 
+    #[error("encryption error: {}", .0)]
+    Encryption(&'static str),
+
     #[error("an i/o error occurred: {}", .0)]
     Io(#[from] std::io::Error),
 }

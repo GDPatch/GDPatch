@@ -649,8 +649,9 @@ unsafe extern "system" fn query_information_file_detour(
                     } else {
                         let info =
                             unsafe { &mut *file_information.cast::<FILE_STANDARD_INFORMATION>() };
-                        info.AllocationSize = 10000;
-                        info.EndOfFile = 10000;
+                        let file_size = stream.stream_len().unwrap_or(10000) as i64;
+                        info.AllocationSize = file_size;
+                        info.EndOfFile = file_size;
                         info.NumberOfLinks = 0;
                         info.DeletePending = false;
                         info.Directory = false;

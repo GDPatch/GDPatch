@@ -16,7 +16,7 @@ impl VirtualPackBuilder {
     /// Create a new [`VirtualPackBuilder`] using the same format as the [`old_pack`].
     pub fn new(old_pack: &Pack) -> Self {
         Self {
-            builder: PackBuilder::new(old_pack.format, old_pack.engine_version),
+            builder: PackBuilder::from_pack(old_pack),
             entries: Default::default(),
             pack_offset: 0,
         }
@@ -24,24 +24,32 @@ impl VirtualPackBuilder {
 
     // TODO: recalculate hash probably, all of the hashes we pass are wrong
     pub fn add_file(&mut self, path: String, size: u64, hash: [u8; 16], contents: FileContents) {
+        self.add_packed_file(
+            path,
+            PackedFile {
+                encrypted: false,
+                offset: 0,
+                size,
+                hash,
+            },
+            contents,
+        );
+    }
+
+    /// Add a packed file, preserving its encryption flag.
+    pub fn add_packed_file(&mut self, path: String, mut file: PackedFile, contents: FileContents) {
         // If we're overwriting a file, remove the old backing entry.
         if let Some(old_contents) = self.builder.files.get(&path) {
             self.entries.shift_remove(&old_contents.offset);
         }
 
-        self.builder.files.insert(
-            path,
-            PackedFile {
-                encrypted: false,
-                offset: self.pack_offset,
-                size,
-                hash,
-            },
-        );
+        file.offset = self.pack_offset;
+        self.builder.files.insert(path, file);
 
+        let stored_size = contents.len();
         self.entries.insert(self.pack_offset, contents);
 
-        self.pack_offset = (self.pack_offset + size).next_multiple_of(PACK_ALIGNMENT);
+        self.pack_offset = (self.pack_offset + stored_size).next_multiple_of(PACK_ALIGNMENT);
     }
 
     /// Consume this instance and return the built [`VirtualPack`].

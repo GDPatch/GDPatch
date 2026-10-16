@@ -1,16 +1,19 @@
 //! Godot PCK file format parsers etc.
 
 mod builder;
+mod encryption;
 
 use crate::Error;
 use byteorder::{LittleEndian, ReadBytesExt};
 use core::str;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Seek, SeekFrom};
+use std::borrow::Cow;
+use std::io::{Cursor, Read, Seek, SeekFrom};
 use tracing::error;
 
 pub use self::builder::PackBuilder;
+pub use self::encryption::EncryptionKey;
 
 const PACK_DIR_ENCRYPTED: u32 = 1 << 0;
 const PACK_REL_FILEBASE: u32 = 1 << 1;
@@ -30,6 +33,9 @@ const PACK_FILE_DELTA: u32 = 1 << 2;
 pub struct PackConfig {
     /// The magic constant present in the header of pack files.
     pck_header_magic: Option<String>,
+
+    /// The game's 256-bit export key, written as 64 hexadecimal characters.
+    pub encryption_key: Option<EncryptionKey>,
 }
 
 impl PackConfig {
@@ -72,8 +78,24 @@ pub struct PackedFile {
     pub hash: [u8; 16],
 }
 
+impl PackedFile {
+    /// Size of this file in the pack, including encryption metadata and padding.
+    pub fn stored_size(&self) -> u64 {
+        if self.encrypted {
+            40 + self.size.next_multiple_of(16)
+        } else {
+            self.size
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Pack {
+    encryption_key: Option<Box<EncryptionKey>>,
+
+    /// Whether the file directory is encrypted.
+    pub encrypted_directory: bool,
+
     /// The version of the pack format this pack is using.
     pub format: PackFormat,
 
@@ -155,17 +177,24 @@ impl Pack {
         // Read directory.
         let file_count = f.read_u32::<LittleEndian>()?;
 
-        if enc_directory {
-            panic!("Games using encryption are currently unsupported");
-        }
+        let mut decrypted_directory;
+        let directory: &mut dyn Read = if enc_directory {
+            let key = config.encryption_key.as_ref().ok_or(Error::Encryption(
+                "encrypted PCK requires [engine].encryption_key in GDPatch/config.toml",
+            ))?;
+            decrypted_directory = Cursor::new(encryption::decrypt(&mut f, key, None)?);
+            &mut decrypted_directory
+        } else {
+            &mut f
+        };
 
         let mut files = IndexMap::new();
         let mut deltas = IndexMap::new();
 
         for _ in 0..file_count {
-            let path_length = f.read_u32::<LittleEndian>()? as usize;
+            let path_length = directory.read_u32::<LittleEndian>()? as usize;
             let mut path_bytes = vec![0u8; path_length];
-            f.read_exact(&mut path_bytes)?;
+            directory.read_exact(&mut path_bytes)?;
             let path = str::from_utf8(&path_bytes)
                 .map_err(|err| {
                     error!(?err, "invalid utf-8 in PCK file path");
@@ -174,13 +203,13 @@ impl Pack {
                 .trim_end_matches('\0')
                 .to_string();
 
-            let offset = f.read_u64::<LittleEndian>()?;
-            let size = f.read_u64::<LittleEndian>()?;
+            let offset = directory.read_u64::<LittleEndian>()?;
+            let size = directory.read_u64::<LittleEndian>()?;
 
             let mut hash = [0u8; 16];
-            f.read_exact(&mut hash)?;
+            directory.read_exact(&mut hash)?;
 
-            let flags = f.read_u32::<LittleEndian>()?;
+            let flags = directory.read_u32::<LittleEndian>()?;
             let encrypted = (flags & PACK_FILE_ENCRYPTED) != 0;
             let removal = (flags & PACK_FILE_REMOVAL) != 0;
             let delta = (flags & PACK_FILE_DELTA) != 0;
@@ -204,6 +233,8 @@ impl Pack {
         }
 
         Ok(Self {
+            encryption_key: config.encryption_key.map(Box::new),
+            encrypted_directory: enc_directory,
             format,
             engine_version: (engine_major, engine_minor, engine_patch),
             salt,
@@ -211,5 +242,23 @@ impl Pack {
             files,
             deltas,
         })
+    }
+
+    /// Read the contents of a packed file.
+    pub fn file_data<'a>(&self, data: &'a [u8], file: &PackedFile) -> crate::Result<Cow<'a, [u8]>> {
+        if file.encrypted {
+            let key = self.encryption_key.as_ref().ok_or(Error::Encryption(
+                "encrypted PCK requires [engine].encryption_key in GDPatch/config.toml",
+            ))?;
+            Ok(Cow::Owned(encryption::decrypt(
+                &mut Cursor::new(&data[file.offset as usize..]),
+                key,
+                Some(file.size),
+            )?))
+        } else {
+            Ok(Cow::Borrowed(
+                &data[file.offset as usize..(file.offset + file.size) as usize],
+            ))
+        }
     }
 }

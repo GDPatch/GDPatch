@@ -122,13 +122,11 @@ impl<'a> Patcher<'a> {
                 .get(&path)
                 .expect("project settings file is missing");
 
-            let contents = FileContents::Disk {
-                mapping: self.mapping.clone(),
-                offset: file.offset,
-                len: file.size,
-            };
-
-            let slice = contents.as_slice();
+            let contents = self
+                .old_pack
+                .file_data(&self.mapping, file)
+                .expect("failed to read project settings");
+            let slice = contents.as_ref();
 
             let mut buf = ReadableMarshalBuffer::new(slice, true);
             ProjectSettings::parse_binary(&mut buf).expect("failed to parse project settings")
@@ -340,6 +338,7 @@ impl<'a> Patcher<'a> {
         };
 
         // Rebuild files in the virtual pack.
+        let mapping = self.mapping.clone();
         for (path, file) in &self.old_pack.files {
             let normalized_path = self.strip_path_prefix(path);
             let _entered = info_span!("pack_entry", path = %normalized_path).entered();
@@ -347,9 +346,31 @@ impl<'a> Patcher<'a> {
             let contents = FileContents::Disk {
                 mapping: self.mapping.clone(),
                 offset: file.offset,
-                len: file.size,
+                len: file.stored_size(),
             };
-            let slice = contents.as_slice();
+
+            let is_script = path.ends_with(".gd") || path.ends_with(".gdc");
+            let should_patch_script = self.callbacks.has_patcher_for_script(&normalized_path)
+                || self.config.debug.patch_all_scripts;
+            let should_patch_file = self.callbacks.has_patcher_for_file(&normalized_path);
+            if file.encrypted
+                && !(is_script && should_patch_script)
+                && !(!is_script && should_patch_file)
+                && ![
+                    UIDCache::UID_CACHE_FILENAME,
+                    ClassCache::CLASS_CACHE_FILENAME,
+                    ExtensionList::EXTENSION_LIST_FILENAME,
+                ]
+                .iter()
+                .any(|name| normalized_path == self.data_dir_path(name))
+            {
+                self.new_pack
+                    .add_packed_file(path.clone(), file.clone(), contents);
+                continue;
+            }
+
+            let data = self.old_pack.file_data(&mapping, file)?;
+            let slice = data.as_ref();
 
             match self.merge_special_file(&normalized_path, slice) {
                 Ok(patched) => {
@@ -362,9 +383,6 @@ impl<'a> Patcher<'a> {
             };
 
             // Patch scripts.
-            let is_script = path.ends_with(".gd") || path.ends_with(".gdc");
-            let should_patch_script = self.callbacks.has_patcher_for_script(&normalized_path)
-                || self.config.debug.patch_all_scripts;
             if is_script && should_patch_script {
                 match self.patch_script(&normalized_path, slice, &gdscript_build) {
                     Ok(patched_data) => {
@@ -384,7 +402,7 @@ impl<'a> Patcher<'a> {
                 }
             }
 
-            if !is_script && self.callbacks.has_patcher_for_file(&normalized_path) {
+            if !is_script && should_patch_file {
                 match self.callbacks.patch_file(&normalized_path, slice) {
                     Ok(patched_data) => {
                         self.new_pack.add_file(
@@ -406,7 +424,7 @@ impl<'a> Patcher<'a> {
             // Preserve the original file.
             trace!("adding game file");
             self.new_pack
-                .add_file(path.clone(), file.size, file.hash, contents);
+                .add_packed_file(path.clone(), file.clone(), contents);
         }
 
         // Insert modded pack files.
