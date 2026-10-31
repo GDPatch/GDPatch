@@ -14,5 +14,4 @@ gdpatch-godot.workspace = true
 filesilly.workspace = true
 memmap2.workspace = true
 parking_lot.workspace = true
-gobbind-macros = { path = "../gobbind/macros" }
-bevy_reflect.workspace = true
+gobbind = { path = "../gobbind" }

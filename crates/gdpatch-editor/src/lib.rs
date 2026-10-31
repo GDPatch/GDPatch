@@ -18,10 +18,6 @@ use std::{
 
 mod gdextension;
 
-#[path = "macro_rt.rs"]
-#[doc(hidden)]
-mod __rt;
-
 static CURRENT_PACK: LazyLock<ReentrantMutex<RefCell<Option<LoadedPack>>>> =
     LazyLock::new(Default::default);
 

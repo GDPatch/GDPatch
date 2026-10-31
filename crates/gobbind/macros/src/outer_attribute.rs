@@ -1,65 +1,15 @@
 use crate::inner_attribute::{CustomAttribute, InnerAttributes};
 use crate::utils::CombineSynErrors;
 use proc_macro2::{Ident, TokenStream};
-use quote::{quote, quote_spanned};
+use quote::{format_ident, quote, quote_spanned};
 use syn::parse::Nothing;
-use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::{
-    Error, FnArg, GenericArgument, ImplItem, ItemImpl, Lifetime, PathArguments, PredicateType,
-    ReturnType, Safety, TraitBound, Type, TypeParamBound, WhereClause, WherePredicate, parse_quote,
-};
+use syn::{Error, ImplItem, ItemImpl, Safety, Type};
 
 struct Method {
     ident: Ident,
     name: String,
     custom_attributes: Vec<CustomAttribute>,
-    argument_types: Vec<Box<Type>>,
-    output_type: Box<Type>,
-}
-
-/// Replaces all the lifetimes in a type with the provided lifetime.
-// Copied from dtolnay/linkme
-// https://github.com/dtolnay/linkme/blob/41bcf2f851e811b282d9d1f24bc1b26173488d74impl/src/ty.rs#L3
-fn replace_type_lifetime(ty: &mut Type, lt: &Lifetime) {
-    match ty {
-        Type::Array(ty) => replace_type_lifetime(&mut ty.elem, lt),
-        Type::Group(ty) => replace_type_lifetime(&mut ty.elem, lt),
-        Type::Paren(ty) => replace_type_lifetime(&mut ty.elem, lt),
-        Type::Path(ty) => {
-            if let Some(qself) = &mut ty.qself {
-                replace_type_lifetime(&mut qself.ty, lt);
-            }
-            for segment in &mut ty.path.segments {
-                if let PathArguments::AngleBracketed(segment) = &mut segment.arguments {
-                    for arg in &mut segment.args {
-                        if let GenericArgument::Type(arg) = arg {
-                            replace_type_lifetime(arg, lt);
-                        }
-                    }
-                }
-            }
-        }
-        Type::Ptr(ty) => replace_type_lifetime(&mut ty.elem, lt),
-        Type::Reference(ty) => {
-            ty.lifetime = Some(lt.clone());
-            replace_type_lifetime(&mut ty.elem, lt);
-        }
-        Type::Slice(ty) => replace_type_lifetime(&mut ty.elem, lt),
-        Type::Tuple(ty) => ty
-            .elems
-            .iter_mut()
-            .for_each(|ty| replace_type_lifetime(ty, lt)),
-        Type::ImplTrait(_)
-        | Type::Infer(_)
-        | Type::Macro(_)
-        | Type::Never(_)
-        | Type::TraitObject(_)
-        | Type::FnPtr(_)
-        | Type::Verbatim(_) => {}
-
-        _ => unimplemented!("unknown Type"),
-    }
 }
 
 fn parse_items_to_methods(items: &mut [ImplItem]) -> syn::Result<Vec<Method>> {
@@ -120,30 +70,10 @@ fn parse_items_to_methods(items: &mut [ImplItem]) -> syn::Result<Vec<Method>> {
             None => item_fn.sig.ident.to_string(),
         };
 
-        let argument_types = item_fn
-            .sig
-            .inputs
-            .iter()
-            .map(|arg| match arg {
-                FnArg::Receiver(_) => unimplemented!(),
-                FnArg::Typed(pat) => pat.ty.clone(),
-            })
-            .collect::<Vec<_>>();
-
-        let output_type = match &item_fn.sig.output {
-            ReturnType::Default => {
-                let ty: Type = syn::parse_quote!(());
-                Box::new(ty)
-            }
-            ReturnType::Type(_, inner) => inner.clone(),
-        };
-
         methods.push(Method {
             ident: item_fn.sig.ident.clone(),
             name,
             custom_attributes: parsed.custom_attributes,
-            argument_types,
-            output_type,
         });
     }
 
@@ -154,52 +84,8 @@ fn parse_items_to_methods(items: &mut [ImplItem]) -> syn::Result<Vec<Method>> {
     }
 }
 
-fn expand_gobbind_functions_impl(ty: &Type, methods: &[Method]) -> TokenStream {
-    let env_lt: Lifetime = parse_quote! { '__env };
-    let converter_lt: Lifetime = parse_quote! { '__converter };
-    let converter_ty: Type = parse_quote! { __Converter };
-    let visitor_ty: Type = parse_quote! { __Visitor };
-    let visitor_ident: Ident = parse_quote! { __visitor };
-
-    let where_clause = {
-        let mut where_bounds = Vec::new();
-
-        for method in methods {
-            for arg_ty in &method.argument_types {
-                let mut arg_ty = arg_ty.clone();
-                replace_type_lifetime(&mut arg_ty, &converter_lt);
-
-                let bound: TraitBound =
-                    parse_quote! { ::gobbind::Provides<#converter_lt, #arg_ty> };
-                where_bounds.push(TypeParamBound::Trait(bound));
-            }
-
-            let mut output_ty = method.output_type.clone();
-            replace_type_lifetime(&mut output_ty, &converter_lt);
-
-            let output_bound: TraitBound =
-                parse_quote! { ::gobbind::Consumes<#converter_lt, #output_ty> };
-            where_bounds.push(TypeParamBound::Trait(output_bound));
-        }
-
-        let predicate = WherePredicate::Type(PredicateType {
-            attrs: vec![],
-            lifetimes: None,
-            bounded_ty: converter_ty.clone(),
-            colon_token: Default::default(),
-            bounds: Punctuated::from_iter(where_bounds),
-        });
-
-        let mut predicates = Punctuated::new();
-        predicates.push(predicate);
-
-        WhereClause {
-            where_token: Default::default(),
-            predicates,
-        }
-    };
-
-    let mut visit_calls = Vec::new();
+fn expand_globals(self_ty: &Type, methods: &[Method]) -> TokenStream {
+    let mut function_info_statics = Vec::new();
 
     for method in methods {
         let name = &method.name;
@@ -212,33 +98,26 @@ fn expand_gobbind_functions_impl(ty: &Type, methods: &[Method]) -> TokenStream {
             }
         });
 
-        visit_calls.push(quote! {
-            {
+        let function_info_ident = format_ident!("__FUNCTION_INFO_{ident}");
+        function_info_statics.push(quote! {
+            #[::gobbind::__private::linkme::distributed_slice(::gobbind::__private::FUNCTION_INFOS)]
+            #[linkme(crate = ::gobbind::__private::linkme)]
+            static #function_info_ident: (::gobbind::__private::TypeId, ::gobbind::FunctionInfo) = {
                 static __CUSTOM_ATTRIBUTES: ::gobbind::__private::CustomAttributesInner = &[
                     #(#custom_attr_ctors),*
                 ];
 
-                let info: ::gobbind::FunctionInfo<_, (#converter_ty, _)> = const {
-                    ::gobbind::__private::new_function_info(Self::#ident, #name, __CUSTOM_ATTRIBUTES)
-                };
-
-                #visitor_ident.visit(info);
-            }
+                let type_id = ::gobbind::__private::type_id_of_val(#self_ty::#ident);
+                let info = ::gobbind::__private::new_function_info(#name, __CUSTOM_ATTRIBUTES);
+                (type_id, info)
+            };
         });
     }
 
     quote! {
-        #[automatically_derived]
-        impl<#env_lt, #converter_lt, #converter_ty> ::gobbind::GobbindFunctions<#env_lt, #converter_lt, #converter_ty> for #ty
-        #where_clause
-        {
-            fn walk_functions<#visitor_ty>(#visitor_ident: &mut #visitor_ty)
-            where
-                #visitor_ty: ::gobbind::FunctionVisitor<#env_lt, #converter_lt, Converter = #converter_ty>,
-            {
-                #(#visit_calls)*
-            }
-        }
+        const _: () = {
+            #(#function_info_statics)*
+        };
     }
 }
 
@@ -255,10 +134,16 @@ pub fn gobbind_attribute(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         match syn::parse2::<ItemImpl>(item) {
             Ok(item) => item,
-            Err(err) => {
-                errors.push(err);
+            Err(_) => {
+                errors.push(Error::new(
+                    cloned_item.span(),
+                    "#[gobbind] can only be applied to `impl`s - maybe you forgot the outer attribute?",
+                ));
+                let error_tokens = errors.combine().unwrap().into_compile_error();
+
                 return quote! {
                     #cloned_item
+                    #error_tokens
                 };
             }
         }
@@ -273,35 +158,24 @@ pub fn gobbind_attribute(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let self_ty = &*impl_.self_ty;
 
-    let assert_derives = quote! {
-        const _: () = {
-            ::gobbind::__private::assert_derives_gobbind::<#self_ty>();
-        };
-    };
-
     let methods = match parse_items_to_methods(&mut impl_.items) {
         Ok(methods) => methods,
         Err(error) => {
             errors.push(error);
-            let dummy_functions_impl = expand_gobbind_functions_impl(self_ty, &[]);
             let error = errors.combine().unwrap().into_compile_error();
 
             return quote! {
                 #impl_
-                #assert_derives
-                #dummy_functions_impl
-
                 #error
             };
         }
     };
 
-    let functions_impl = expand_gobbind_functions_impl(self_ty, &methods);
+    let globals = expand_globals(self_ty, &methods);
 
     let tokens = quote! {
         #impl_
-        #assert_derives
-        #functions_impl
+        #globals
     };
 
     // panic!("{}", tokens);
