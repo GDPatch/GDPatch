@@ -1,8 +1,8 @@
 //! [GlobalAlloc] implementation using the GDExtension allocator API.
+use crate::gdextension::api::GDExtensionApi;
 use std::alloc::{GlobalAlloc, Layout};
 use std::ffi::c_void;
 use std::ptr;
-use crate::gdextension::api::GDExtensionApi;
 
 #[derive(Debug)]
 pub struct GDExtensionAllocator;
@@ -49,11 +49,8 @@ unsafe fn align_ptr_with_metadata(ptr: *mut u8, layout: Layout) -> *mut u8 {
 unsafe fn unalign_ptr(ptr: *mut u8, layout: Layout) -> *mut u8 {
     if layout.align() > GUARANTEED_ALIGNMENT {
         // SAFETY: `alloc` stores the offset just before the returned pointer
-        let original_offset = unsafe {
-            ptr.cast::<usize>()
-                .byte_sub(ALIGNMENT_METADATA_SIZE)
-                .read()
-        };
+        let original_offset =
+            unsafe { ptr.cast::<usize>().byte_sub(ALIGNMENT_METADATA_SIZE).read() };
 
         // SAFETY: Pointer was allocated with align_ptr_with_metadata
         unsafe { ptr.byte_sub(original_offset + ALIGNMENT_METADATA_SIZE) }
@@ -65,7 +62,7 @@ unsafe fn unalign_ptr(ptr: *mut u8, layout: Layout) -> *mut u8 {
 unsafe impl GlobalAlloc for GDExtensionAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let Some(api) = GDExtensionApi::try_instance() else {
-            return ptr::null_mut()
+            return ptr::null_mut();
         };
 
         let align = layout.align();
@@ -74,8 +71,7 @@ unsafe impl GlobalAlloc for GDExtensionAllocator {
             if align > GUARANTEED_ALIGNMENT {
                 // alignment is more than guaranteed alignment
                 let additional_size = required_additional_size_for_alignment(layout);
-                let ptr =
-                    (api.interface.mem_alloc)(layout.size() + additional_size) as *mut u8;
+                let ptr = (api.interface.mem_alloc)(layout.size() + additional_size) as *mut u8;
                 align_ptr_with_metadata(ptr, layout)
             } else {
                 (api.interface.mem_alloc)(layout.size()) as *mut u8
@@ -114,7 +110,7 @@ unsafe impl GlobalAlloc for GDExtensionAllocator {
         }
 
         let Some(api) = GDExtensionApi::try_instance() else {
-            return ptr::null_mut()
+            return ptr::null_mut();
         };
 
         let align = layout.align();

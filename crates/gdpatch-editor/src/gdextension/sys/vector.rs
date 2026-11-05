@@ -1,9 +1,9 @@
-use std::marker::PhantomData;
 use crate::gdextension::api::API;
 use crate::gdextension::sys::{
-    GDExtensionConstTypePtr, GDExtensionType, GDExtensionUninitializedTypePtr
-    , GDExtensionVariant, GDExtensionVariantType,
+    GDExtensionConstTypePtr, GDExtensionType, GDExtensionUninitializedTypePtr, GDExtensionVariant,
+    GDExtensionVariantType,
 };
+use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ptr;
 

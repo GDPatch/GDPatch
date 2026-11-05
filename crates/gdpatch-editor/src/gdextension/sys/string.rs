@@ -3,8 +3,8 @@
 use crate::gdextension::api::API;
 use crate::gdextension::sys::variant::GDExtensionVariant;
 use crate::gdextension::sys::{
-    char32_t, GDExtensionConstTypePtr, GDExtensionStringPtr, GDExtensionType,
-    GDExtensionTypePtr, GDExtensionUninitializedTypePtr, GDExtensionVariantType,
+    GDExtensionConstTypePtr, GDExtensionStringPtr, GDExtensionType, GDExtensionTypePtr,
+    GDExtensionUninitializedTypePtr, GDExtensionVariantType, char32_t,
 };
 use std::ffi::CStr;
 use std::fmt::{Display, Formatter};

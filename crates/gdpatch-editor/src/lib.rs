@@ -6,6 +6,7 @@ use gdpatch_godot::{
     pack::{Pack, PackConfig, PackedFile},
     project_settings::ProjectSettings,
 };
+use gobbind::gobbind;
 use memmap2::Mmap;
 use parking_lot::{Mutex, ReentrantMutex};
 use std::{
@@ -16,7 +17,6 @@ use std::{
     sync::{Arc, LazyLock},
     time::SystemTime,
 };
-use gobbind::gobbind;
 
 mod gdextension;
 mod hash;
