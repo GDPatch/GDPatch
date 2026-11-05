@@ -1,9 +1,9 @@
 //! GDExtension entrypoint and global state.
 
-use crate::gdextension::api::{API, setup_api};
+use crate::gdextension::api::setup_api;
 use crate::gdextension::sys::{
     GDExtensionClassLibraryPtr, GDExtensionInitialization, GDExtensionInitializationLevel,
-    GDExtensionInterfaceUnknown, GDExtensionString, GDExtensionStringName,
+    GDExtensionInterfaceUnknown, GDExtensionType, PackedArray,
 };
 use std::ffi::c_void;
 
@@ -34,9 +34,17 @@ unsafe extern "C" fn initialize(_userdata: *mut c_void, level: GDExtensionInitia
         return;
     }
 
-    let s = GDExtensionString::from("meow");
-    println!("hi: {s}");
-    drop(s);
+    let mut a = PackedArray::<u8>::new();
+
+    println!("{}", a.len());
+    a.resize(100);
+    println!("{}", a.len());
+
+    println!("{}", a[21]);
+    a[21] = 69;
+    println!("{}", a[21]);
+
+    drop(a);
 }
 
 unsafe extern "C" fn deinitialize(_userdata: *mut c_void, level: GDExtensionInitializationLevel) {
