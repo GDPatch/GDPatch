@@ -9,18 +9,25 @@ use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 use std::{ptr, slice};
 
-#[repr(C)]
+#[repr(C, align(8))]
 #[derive(Debug)]
 pub struct PackedArray<T> {
-    ptr: *const (),
+    inner: [MaybeUninit<u8>; size_of::<*const ()>() * 2],
     phantom: PhantomData<T>,
 }
+
+const _: () = {
+    if size_of::<PackedArray<u8>>() != size_of::<*const ()>() * 2 {
+        panic!("PackedArray size is wrong");
+    }
+};
 
 impl PackedArray<u8> {
     /// Returns the length of this array.
     pub fn len(&self) -> usize {
         let built_in_methods = API.built_in_methods();
         let mut length: GDExtensionInt = 0;
+
         unsafe {
             (built_in_methods.packed_byte_array_size)(
                 &raw const *self as GDExtensionTypePtr,
@@ -47,7 +54,7 @@ impl PackedArray<u8> {
         unsafe {
             // TODO: error handling lmfao
             (built_in_methods.resize_packed_byte_array)(
-                &raw const *self as GDExtensionTypePtr,
+                &raw mut *self as GDExtensionTypePtr,
                 arguments.as_ptr(),
                 &raw mut error as GDExtensionUninitializedTypePtr,
                 arguments.len() as c_int,
@@ -68,7 +75,7 @@ impl PackedArray<u8> {
     pub fn as_mut_ptr(&mut self) -> *mut u8 {
         let ptr = unsafe {
             (API.interface.packed_byte_array_operator_index)(
-                &raw const *self as GDExtensionTypePtr,
+                &raw mut *self as GDExtensionTypePtr,
                 0,
             )
         };
@@ -115,7 +122,7 @@ impl GDExtensionType for PackedArray<u8> {
     const VARIANT_TYPE: GDExtensionVariantType = GDExtensionVariantType::PackedByteArray;
 
     fn new() -> Self {
-        let mut result = MaybeUninit::uninit();
+        let mut result = MaybeUninit::zeroed();
 
         unsafe {
             (API.construct_packed_byte_array)(
