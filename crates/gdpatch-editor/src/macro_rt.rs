@@ -9,7 +9,7 @@ use std::str::FromStr;
 pub unsafe extern "C" fn create_instance<T: Default>(
     _userdata: *mut c_void,
 ) -> *mut GDExtensionObject {
-    let api = unsafe { get_api() };
+    let api = unsafe { GDExtensionApi::instance() };
 
     let parent_class_name = GDExtensionString::from_str("Node").unwrap();
     let parent_class_name = GDExtensionStringName::from(&parent_class_name);
