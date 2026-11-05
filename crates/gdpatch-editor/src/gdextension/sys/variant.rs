@@ -1,6 +1,9 @@
 use crate::gdextension::api::API;
 use crate::gdextension::sys::string::GDExtensionStringName;
-use crate::gdextension::sys::{GDExtensionCallError, GDExtensionCallErrorType, GDExtensionConstVariantPtr, GDExtensionInt, GDExtensionVariantType};
+use crate::gdextension::sys::{
+    GDExtensionCallError, GDExtensionCallErrorType, GDExtensionConstVariantPtr, GDExtensionInt,
+    GDExtensionVariantType,
+};
 use std::mem::MaybeUninit;
 
 #[repr(C, align(8))] // data field is alignas(8)
@@ -36,7 +39,7 @@ impl GDExtensionVariant {
                 arguments.as_ptr().cast::<GDExtensionConstVariantPtr>(),
                 arguments.len() as GDExtensionInt,
                 &mut result,
-                &mut error
+                &mut error,
             );
         }
 
@@ -62,7 +65,7 @@ impl GDExtensionVariant {
                 arguments.as_ptr().cast::<GDExtensionConstVariantPtr>(),
                 arguments.len() as GDExtensionInt,
                 &mut result,
-                &mut error
+                &mut error,
             );
         }
 
