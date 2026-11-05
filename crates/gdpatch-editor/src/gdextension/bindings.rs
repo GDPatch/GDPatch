@@ -1,7 +1,10 @@
 use crate::gdextension::api::GDExtensionApi;
+use crate::gdextension::sys::{
+    GDExtensionClassMethodArgumentMetadata, GDExtensionPropertyInfo, GDExtensionString,
+    GDExtensionStringName, GDExtensionStringNamePtr, GDExtensionStringPtr, GDExtensionVariantType,
+};
 use gobbind::{Converter, DynamicFn, FunctionInfo, WalkArgument, WalkReturn, WalkableFn, Walker};
 use std::ptr;
-use crate::gdextension::sys::{GDExtensionClassMethodArgumentMetadata, GDExtensionPropertyInfo, GDExtensionString, GDExtensionStringName, GDExtensionStringNamePtr, GDExtensionStringPtr, GDExtensionVariantType};
 
 #[derive(Debug)]
 pub struct GDExtensionConverter<'builder> {
@@ -75,9 +78,7 @@ impl<'state> WalkArgument<'state, String> for GDExtensionWalker<'state> {
 }
 
 #[derive(Debug)]
-struct GDClassBuilder {
-
-}
+struct GDClassBuilder {}
 
 impl GDClassBuilder {
     pub fn add_function<'this, F, WalkerDummy, ConverterDummy>(&mut self, _f: F)
