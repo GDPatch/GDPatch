@@ -1,7 +1,10 @@
 //! GDExtension entrypoint and global state.
 
-use crate::gdextension::api::{setup_api, API};
-use crate::gdextension::sys::{GDExtensionClassLibraryPtr, GDExtensionInitialization, GDExtensionInitializationLevel, GDExtensionInterfaceUnknown, GDExtensionString, GDExtensionStringName};
+use crate::gdextension::api::{API, setup_api};
+use crate::gdextension::sys::{
+    GDExtensionClassLibraryPtr, GDExtensionInitialization, GDExtensionInitializationLevel,
+    GDExtensionInterfaceUnknown, GDExtensionString, GDExtensionStringName,
+};
 use std::ffi::c_void;
 
 // #[global_allocator]
@@ -36,6 +39,8 @@ unsafe extern "C" fn initialize(_userdata: *mut c_void, level: GDExtensionInitia
     drop(s);
 }
 
-unsafe extern "C" fn deinitialize(_userdata: *mut c_void, _level: GDExtensionInitializationLevel) {
-    println!("bye meow");
+unsafe extern "C" fn deinitialize(_userdata: *mut c_void, level: GDExtensionInitializationLevel) {
+    if level == GDExtensionInitializationLevel::Scene {
+        println!("bye meow");
+    }
 }

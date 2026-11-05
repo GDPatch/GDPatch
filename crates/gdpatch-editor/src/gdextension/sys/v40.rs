@@ -1,9 +1,91 @@
 //! Manual bindings for the old 4.0 GDExtension API where a struct is provided instead.
 
-use crate::gdextension::sys::{GDExtensionGodotVersion, GDExtensionInt, GDExtensionInterfaceArrayOperatorIndex, GDExtensionInterfaceArrayOperatorIndexConst, GDExtensionInterfaceArrayRef, GDExtensionInterfaceArraySetTyped, GDExtensionInterfaceClassdbConstructObject, GDExtensionInterfaceClassdbGetClassTag, GDExtensionInterfaceClassdbGetMethodBind, GDExtensionInterfaceClassdbRegisterExtensionClass, GDExtensionInterfaceClassdbRegisterExtensionClassIntegerConstant, GDExtensionInterfaceClassdbRegisterExtensionClassMethod, GDExtensionInterfaceClassdbRegisterExtensionClassProperty, GDExtensionInterfaceClassdbRegisterExtensionClassPropertyGroup, GDExtensionInterfaceClassdbRegisterExtensionClassPropertySubgroup, GDExtensionInterfaceClassdbRegisterExtensionClassSignal, GDExtensionInterfaceClassdbUnregisterExtensionClass, GDExtensionInterfaceDictionaryOperatorIndex, GDExtensionInterfaceDictionaryOperatorIndexConst, GDExtensionInterfaceFileAccessGetBuffer, GDExtensionInterfaceFileAccessStoreBuffer, GDExtensionInterfaceFunctionPtr, GDExtensionInterfaceGetGodotVersion, GDExtensionInterfaceGetLibraryPath, GDExtensionInterfaceGetNativeStructSize, GDExtensionInterfaceGetProcAddress, GDExtensionInterfaceGetVariantFromTypeConstructor, GDExtensionInterfaceGetVariantToTypeConstructor, GDExtensionInterfaceGlobalGetSingleton, GDExtensionInterfaceMemAlloc, GDExtensionInterfaceMemFree, GDExtensionInterfaceMemRealloc, GDExtensionInterfaceObjectCastTo, GDExtensionInterfaceObjectDestroy, GDExtensionInterfaceObjectGetInstanceBinding, GDExtensionInterfaceObjectGetInstanceFromId, GDExtensionInterfaceObjectGetInstanceId, GDExtensionInterfaceObjectMethodBindCall, GDExtensionInterfaceObjectMethodBindPtrcall, GDExtensionInterfaceObjectSetInstance, GDExtensionInterfaceObjectSetInstanceBinding, GDExtensionInterfacePackedByteArrayOperatorIndex, GDExtensionInterfacePackedByteArrayOperatorIndexConst, GDExtensionInterfacePackedColorArrayOperatorIndex, GDExtensionInterfacePackedColorArrayOperatorIndexConst, GDExtensionInterfacePackedFloat32ArrayOperatorIndex, GDExtensionInterfacePackedFloat32ArrayOperatorIndexConst, GDExtensionInterfacePackedFloat64ArrayOperatorIndex, GDExtensionInterfacePackedFloat64ArrayOperatorIndexConst, GDExtensionInterfacePackedInt32ArrayOperatorIndex, GDExtensionInterfacePackedInt32ArrayOperatorIndexConst, GDExtensionInterfacePackedInt64ArrayOperatorIndex, GDExtensionInterfacePackedInt64ArrayOperatorIndexConst, GDExtensionInterfacePackedStringArrayOperatorIndex, GDExtensionInterfacePackedStringArrayOperatorIndexConst, GDExtensionInterfacePackedVector2ArrayOperatorIndex, GDExtensionInterfacePackedVector2ArrayOperatorIndexConst, GDExtensionInterfacePackedVector3ArrayOperatorIndex, GDExtensionInterfacePackedVector3ArrayOperatorIndexConst, GDExtensionInterfacePrintError, GDExtensionInterfacePrintErrorWithMessage, GDExtensionInterfacePrintScriptError, GDExtensionInterfacePrintScriptErrorWithMessage, GDExtensionInterfacePrintWarning, GDExtensionInterfacePrintWarningWithMessage, GDExtensionInterfaceRefGetObject, GDExtensionInterfaceRefSetObject, GDExtensionInterfaceScriptInstanceCreate, GDExtensionInterfaceStringNewWithLatin1Chars, GDExtensionInterfaceStringNewWithLatin1CharsAndLen, GDExtensionInterfaceStringNewWithUtf16Chars, GDExtensionInterfaceStringNewWithUtf16CharsAndLen, GDExtensionInterfaceStringNewWithUtf32Chars, GDExtensionInterfaceStringNewWithUtf32CharsAndLen, GDExtensionInterfaceStringNewWithUtf8Chars, GDExtensionInterfaceStringNewWithUtf8CharsAndLen, GDExtensionInterfaceStringNewWithWideChars, GDExtensionInterfaceStringNewWithWideCharsAndLen, GDExtensionInterfaceStringOperatorIndex, GDExtensionInterfaceStringOperatorIndexConst, GDExtensionInterfaceStringOperatorPlusEqC32str, GDExtensionInterfaceStringOperatorPlusEqChar, GDExtensionInterfaceStringOperatorPlusEqCstr, GDExtensionInterfaceStringOperatorPlusEqString, GDExtensionInterfaceStringOperatorPlusEqWcstr, GDExtensionInterfaceStringToLatin1Chars, GDExtensionInterfaceStringToUtf16Chars, GDExtensionInterfaceStringToUtf32Chars, GDExtensionInterfaceStringToUtf8Chars, GDExtensionInterfaceStringToWideChars, GDExtensionInterfaceVariantBooleanize, GDExtensionInterfaceVariantCall, GDExtensionInterfaceVariantCallStatic, GDExtensionInterfaceVariantCanConvert, GDExtensionInterfaceVariantCanConvertStrict, GDExtensionInterfaceVariantConstruct, GDExtensionInterfaceVariantDestroy, GDExtensionInterfaceVariantDuplicate, GDExtensionInterfaceVariantEvaluate, GDExtensionInterfaceVariantGet, GDExtensionInterfaceVariantGetConstantValue, GDExtensionInterfaceVariantGetIndexed, GDExtensionInterfaceVariantGetKeyed, GDExtensionInterfaceVariantGetNamed, GDExtensionInterfaceVariantGetPtrBuiltinMethod, GDExtensionInterfaceVariantGetPtrConstructor, GDExtensionInterfaceVariantGetPtrDestructor, GDExtensionInterfaceVariantGetPtrGetter, GDExtensionInterfaceVariantGetPtrIndexedGetter, GDExtensionInterfaceVariantGetPtrIndexedSetter, GDExtensionInterfaceVariantGetPtrKeyedChecker, GDExtensionInterfaceVariantGetPtrKeyedGetter, GDExtensionInterfaceVariantGetPtrKeyedSetter, GDExtensionInterfaceVariantGetPtrOperatorEvaluator, GDExtensionInterfaceVariantGetPtrSetter, GDExtensionInterfaceVariantGetPtrUtilityFunction, GDExtensionInterfaceVariantGetType, GDExtensionInterfaceVariantGetTypeName, GDExtensionInterfaceVariantHasKey, GDExtensionInterfaceVariantHasMember, GDExtensionInterfaceVariantHasMethod, GDExtensionInterfaceVariantHash, GDExtensionInterfaceVariantHashCompare, GDExtensionInterfaceVariantIterGet, GDExtensionInterfaceVariantIterInit, GDExtensionInterfaceVariantIterNext, GDExtensionInterfaceVariantNewCopy, GDExtensionInterfaceVariantNewNil, GDExtensionInterfaceVariantRecursiveHash, GDExtensionInterfaceVariantSet, GDExtensionInterfaceVariantSetIndexed, GDExtensionInterfaceVariantSetKeyed, GDExtensionInterfaceVariantSetNamed, GDExtensionInterfaceVariantStringify, GDExtensionInterfaceWorkerThreadPoolAddNativeGroupTask, GDExtensionInterfaceWorkerThreadPoolAddNativeTask, GDExtensionInterfaceXmlParserOpenBuffer, GDExtensionPtrBuiltInMethod, GDExtensionStringName, GDExtensionType, GDExtensionVariantType};
-use std::ffi::{c_char, CString};
-use std::str::FromStr;
+use crate::gdextension::sys::{
+    GDExtensionGodotVersion, GDExtensionInt, GDExtensionInterfaceArrayOperatorIndex,
+    GDExtensionInterfaceArrayOperatorIndexConst, GDExtensionInterfaceArrayRef,
+    GDExtensionInterfaceArraySetTyped, GDExtensionInterfaceClassdbConstructObject,
+    GDExtensionInterfaceClassdbGetClassTag, GDExtensionInterfaceClassdbGetMethodBind,
+    GDExtensionInterfaceClassdbRegisterExtensionClass,
+    GDExtensionInterfaceClassdbRegisterExtensionClassIntegerConstant,
+    GDExtensionInterfaceClassdbRegisterExtensionClassMethod,
+    GDExtensionInterfaceClassdbRegisterExtensionClassProperty,
+    GDExtensionInterfaceClassdbRegisterExtensionClassPropertyGroup,
+    GDExtensionInterfaceClassdbRegisterExtensionClassPropertySubgroup,
+    GDExtensionInterfaceClassdbRegisterExtensionClassSignal,
+    GDExtensionInterfaceClassdbUnregisterExtensionClass,
+    GDExtensionInterfaceDictionaryOperatorIndex, GDExtensionInterfaceDictionaryOperatorIndexConst,
+    GDExtensionInterfaceFileAccessGetBuffer, GDExtensionInterfaceFileAccessStoreBuffer,
+    GDExtensionInterfaceFunctionPtr, GDExtensionInterfaceGetGodotVersion,
+    GDExtensionInterfaceGetLibraryPath, GDExtensionInterfaceGetNativeStructSize,
+    GDExtensionInterfaceGetProcAddress, GDExtensionInterfaceGetVariantFromTypeConstructor,
+    GDExtensionInterfaceGetVariantToTypeConstructor, GDExtensionInterfaceGlobalGetSingleton,
+    GDExtensionInterfaceMemAlloc, GDExtensionInterfaceMemFree, GDExtensionInterfaceMemRealloc,
+    GDExtensionInterfaceObjectCastTo, GDExtensionInterfaceObjectDestroy,
+    GDExtensionInterfaceObjectGetInstanceBinding, GDExtensionInterfaceObjectGetInstanceFromId,
+    GDExtensionInterfaceObjectGetInstanceId, GDExtensionInterfaceObjectMethodBindCall,
+    GDExtensionInterfaceObjectMethodBindPtrcall, GDExtensionInterfaceObjectSetInstance,
+    GDExtensionInterfaceObjectSetInstanceBinding, GDExtensionInterfacePackedByteArrayOperatorIndex,
+    GDExtensionInterfacePackedByteArrayOperatorIndexConst,
+    GDExtensionInterfacePackedColorArrayOperatorIndex,
+    GDExtensionInterfacePackedColorArrayOperatorIndexConst,
+    GDExtensionInterfacePackedFloat32ArrayOperatorIndex,
+    GDExtensionInterfacePackedFloat32ArrayOperatorIndexConst,
+    GDExtensionInterfacePackedFloat64ArrayOperatorIndex,
+    GDExtensionInterfacePackedFloat64ArrayOperatorIndexConst,
+    GDExtensionInterfacePackedInt32ArrayOperatorIndex,
+    GDExtensionInterfacePackedInt32ArrayOperatorIndexConst,
+    GDExtensionInterfacePackedInt64ArrayOperatorIndex,
+    GDExtensionInterfacePackedInt64ArrayOperatorIndexConst,
+    GDExtensionInterfacePackedStringArrayOperatorIndex,
+    GDExtensionInterfacePackedStringArrayOperatorIndexConst,
+    GDExtensionInterfacePackedVector2ArrayOperatorIndex,
+    GDExtensionInterfacePackedVector2ArrayOperatorIndexConst,
+    GDExtensionInterfacePackedVector3ArrayOperatorIndex,
+    GDExtensionInterfacePackedVector3ArrayOperatorIndexConst, GDExtensionInterfacePrintError,
+    GDExtensionInterfacePrintErrorWithMessage, GDExtensionInterfacePrintScriptError,
+    GDExtensionInterfacePrintScriptErrorWithMessage, GDExtensionInterfacePrintWarning,
+    GDExtensionInterfacePrintWarningWithMessage, GDExtensionInterfaceRefGetObject,
+    GDExtensionInterfaceRefSetObject, GDExtensionInterfaceScriptInstanceCreate,
+    GDExtensionInterfaceStringNewWithLatin1Chars,
+    GDExtensionInterfaceStringNewWithLatin1CharsAndLen, GDExtensionInterfaceStringNewWithUtf8Chars,
+    GDExtensionInterfaceStringNewWithUtf8CharsAndLen, GDExtensionInterfaceStringNewWithUtf16Chars,
+    GDExtensionInterfaceStringNewWithUtf16CharsAndLen, GDExtensionInterfaceStringNewWithUtf32Chars,
+    GDExtensionInterfaceStringNewWithUtf32CharsAndLen, GDExtensionInterfaceStringNewWithWideChars,
+    GDExtensionInterfaceStringNewWithWideCharsAndLen, GDExtensionInterfaceStringOperatorIndex,
+    GDExtensionInterfaceStringOperatorIndexConst, GDExtensionInterfaceStringOperatorPlusEqC32str,
+    GDExtensionInterfaceStringOperatorPlusEqChar, GDExtensionInterfaceStringOperatorPlusEqCstr,
+    GDExtensionInterfaceStringOperatorPlusEqString, GDExtensionInterfaceStringOperatorPlusEqWcstr,
+    GDExtensionInterfaceStringToLatin1Chars, GDExtensionInterfaceStringToUtf8Chars,
+    GDExtensionInterfaceStringToUtf16Chars, GDExtensionInterfaceStringToUtf32Chars,
+    GDExtensionInterfaceStringToWideChars, GDExtensionInterfaceVariantBooleanize,
+    GDExtensionInterfaceVariantCall, GDExtensionInterfaceVariantCallStatic,
+    GDExtensionInterfaceVariantCanConvert, GDExtensionInterfaceVariantCanConvertStrict,
+    GDExtensionInterfaceVariantConstruct, GDExtensionInterfaceVariantDestroy,
+    GDExtensionInterfaceVariantDuplicate, GDExtensionInterfaceVariantEvaluate,
+    GDExtensionInterfaceVariantGet, GDExtensionInterfaceVariantGetConstantValue,
+    GDExtensionInterfaceVariantGetIndexed, GDExtensionInterfaceVariantGetKeyed,
+    GDExtensionInterfaceVariantGetNamed, GDExtensionInterfaceVariantGetPtrBuiltinMethod,
+    GDExtensionInterfaceVariantGetPtrConstructor, GDExtensionInterfaceVariantGetPtrDestructor,
+    GDExtensionInterfaceVariantGetPtrGetter, GDExtensionInterfaceVariantGetPtrIndexedGetter,
+    GDExtensionInterfaceVariantGetPtrIndexedSetter, GDExtensionInterfaceVariantGetPtrKeyedChecker,
+    GDExtensionInterfaceVariantGetPtrKeyedGetter, GDExtensionInterfaceVariantGetPtrKeyedSetter,
+    GDExtensionInterfaceVariantGetPtrOperatorEvaluator, GDExtensionInterfaceVariantGetPtrSetter,
+    GDExtensionInterfaceVariantGetPtrUtilityFunction, GDExtensionInterfaceVariantGetType,
+    GDExtensionInterfaceVariantGetTypeName, GDExtensionInterfaceVariantHasKey,
+    GDExtensionInterfaceVariantHasMember, GDExtensionInterfaceVariantHasMethod,
+    GDExtensionInterfaceVariantHash, GDExtensionInterfaceVariantHashCompare,
+    GDExtensionInterfaceVariantIterGet, GDExtensionInterfaceVariantIterInit,
+    GDExtensionInterfaceVariantIterNext, GDExtensionInterfaceVariantNewCopy,
+    GDExtensionInterfaceVariantNewNil, GDExtensionInterfaceVariantRecursiveHash,
+    GDExtensionInterfaceVariantSet, GDExtensionInterfaceVariantSetIndexed,
+    GDExtensionInterfaceVariantSetKeyed, GDExtensionInterfaceVariantSetNamed,
+    GDExtensionInterfaceVariantStringify, GDExtensionInterfaceWorkerThreadPoolAddNativeGroupTask,
+    GDExtensionInterfaceWorkerThreadPoolAddNativeTask, GDExtensionInterfaceXmlParserOpenBuffer,
+    GDExtensionPtrBuiltInMethod, GDExtensionStringName, GDExtensionType, GDExtensionVariantType,
+};
 use crate::hash::MurmurHash3;
+use std::ffi::{CString, c_char};
+use std::str::FromStr;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -775,7 +857,7 @@ impl GDExtensionInterface {
     }
 
     /// Looks up a builtin method using `variant_get_ptr_builtin_method`.
-    pub fn lookup_built_in_method<T>(
+    pub unsafe fn lookup_built_in_method<T>(
         &self,
         is_const: bool,
         is_static: bool,
@@ -811,11 +893,7 @@ impl GDExtensionInterface {
         let name = name.into();
 
         unsafe {
-            (self.variant_get_ptr_builtin_method)(
-                T::VARIANT_TYPE,
-                &name,
-                hash as GDExtensionInt
-            )
+            (self.variant_get_ptr_builtin_method)(T::VARIANT_TYPE, &name, hash as GDExtensionInt)
         }
     }
 }
