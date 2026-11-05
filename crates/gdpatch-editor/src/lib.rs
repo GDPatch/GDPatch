@@ -1,3 +1,4 @@
+#![deny(unsafe_op_in_unsafe_fn)]
 use filesilly::{Stat, StatResult};
 use gdpatch_godot::{
     ReadableMarshalBuffer, UIDCache,
@@ -15,8 +16,10 @@ use std::{
     sync::{Arc, LazyLock},
     time::SystemTime,
 };
+use gobbind::gobbind;
 
 mod gdextension;
+mod hash;
 
 static CURRENT_PACK: LazyLock<ReentrantMutex<RefCell<Option<LoadedPack>>>> =
     LazyLock::new(Default::default);
@@ -121,7 +124,7 @@ impl LoadedPack {
 #[derive(Default)]
 pub struct GDPatchPack {}
 
-#[gobbind_macros::expose(GDPatchPack)]
+#[gobbind]
 impl GDPatchPack {
     pub fn set_pack(project_path: String, pack_path: String) {
         let project_path = PathBuf::from(project_path);

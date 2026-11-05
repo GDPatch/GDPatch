@@ -1,142 +1,203 @@
-#![allow(clippy::missing_transmute_annotations)]
+use crate::gdextension::sys::{GDExtensionClassLibraryPtr, GDExtensionConstTypePtr, GDExtensionInterface, GDExtensionInterfaceUnknown, GDExtensionPtrBuiltInMethod, GDExtensionPtrConstructor, GDExtensionPtrDestructor, GDExtensionTypeFromVariantConstructorFunc, GDExtensionVariantFromTypeConstructorFunc, GDExtensionVariantType, PackedArray};
+use std::ops::Deref;
+use std::sync::OnceLock;
 
-use crate::gdextension::types::*;
-use std::{ffi::CString, str::FromStr, sync::OnceLock};
+pub(crate) struct GDExtensionApiHolder(OnceLock<GDExtensionApi>);
+pub(crate) static API: GDExtensionApiHolder = GDExtensionApiHolder(OnceLock::new());
 
-static API: OnceLock<GDExtensionAPI> = OnceLock::new();
+impl Deref for GDExtensionApiHolder {
+    type Target = GDExtensionApi;
 
-#[derive(Debug, Copy, Clone)]
-pub struct GDExtensionAPI {
-    pub library: GDExtensionClassLibraryPtr,
-
-    pub variant_get_type: GDExtensionInterfaceVariantGetType,
-
-    pub string_new_with_utf8_chars_and_len: GDExtensionInterfaceStringNewWithUtf8CharsAndLen,
-
-    pub string_to_utf8_chars: GDExtensionInterfaceStringToUtf8Chars,
-
-    pub object_set_instance_binding: GDExtensionInterfaceObjectSetInstanceBinding,
-
-    pub object_set_instance: GDExtensionInterfaceObjectSetInstance,
-
-    pub classdb_construct_object: GDExtensionInterfaceClassDBConstructObject,
-
-    pub classdb_register_extension_class: GDExtensionInterfaceClassDBRegisterExtensionClass,
-    pub classdb_register_extension_class_method:
-        GDExtensionInterfaceClassDBRegisterExtensionClassMethod,
-
-    pub constructor_string_name: GDExtensionPtrConstructor,
-    pub constructor_string_from_variant: GDExtensionTypeFromVariantConstructor,
-
-    pub destructor_string: GDExtensionPtrDestructor,
-    pub destructor_string_name: GDExtensionPtrDestructor,
+    fn deref(&self) -> &Self::Target {
+        self.0.get().expect("API should have been initialized")
+    }
 }
 
-unsafe impl Send for GDExtensionAPI {}
-unsafe impl Sync for GDExtensionAPI {}
+#[derive(Debug, Copy, Clone)]
+pub struct GDExtensionApi {
+    pub library: GDExtensionClassLibraryPtr,
+    pub interface: GDExtensionInterface,
 
-impl GDExtensionAPI {
+    pub construct_string_name: GDExtensionPtrConstructor,
+    pub construct_string_name_from_string: GDExtensionPtrConstructor,
+    pub construct_string_name_from_variant: GDExtensionTypeFromVariantConstructorFunc,
+    pub construct_variant_from_string_name: GDExtensionVariantFromTypeConstructorFunc,
+    pub destruct_string_name: GDExtensionPtrDestructor,
+
+    pub construct_string: GDExtensionPtrConstructor,
+    pub construct_string_from_string_name: GDExtensionPtrConstructor,
+    pub construct_string_from_variant: GDExtensionTypeFromVariantConstructorFunc,
+    pub construct_variant_from_string: GDExtensionVariantFromTypeConstructorFunc,
+    pub destruct_string: GDExtensionPtrDestructor,
+
+    pub construct_packed_byte_array: GDExtensionPtrConstructor,
+    pub destruct_packed_byte_array: GDExtensionPtrDestructor,
+    pub construct_packed_byte_array_from_variant: GDExtensionTypeFromVariantConstructorFunc,
+    pub construct_variant_from_packed_byte_array: GDExtensionVariantFromTypeConstructorFunc,
+    pub resize_packed_byte_array: GDExtensionPtrBuiltInMethod,
+    pub packed_byte_array_size: GDExtensionPtrBuiltInMethod,
+}
+
+unsafe impl Send for GDExtensionApi {}
+unsafe impl Sync for GDExtensionApi {}
+
+// https://github.com/godotengine/godot/blob/4.0-stable/core/variant/variant_construct.cpp#L58
+const CONSTRUCT_STRING_NAME_IDX: i32 = 0;
+const CONSTRUCT_STRING_NAME_FROM_STRING_IDX: i32 = 2;
+
+const CONSTRUCT_STRING_IDX: i32 = 0;
+const CONSTRUCT_STRING_FROM_STRING_NAME_IDX: i32 = 2;
+
+impl GDExtensionApi {
+    pub fn try_instance() -> Option<&'static GDExtensionApi> {
+        API.0.get()
+    }
+
     unsafe fn resolve(
-        interface: GDExtensionInterfaceUnknown,
+        interface: GDExtensionInterface,
         library: GDExtensionClassLibraryPtr,
     ) -> Self {
-        // Godot 4.0's interface is a direct pointer to GDExtensionInterface,
-        // but 4.1 and onwards use GDExtensionInterfaceGetProcAddress. Since
-        // GDExtensionInterface starts with a version number, we can dereference
-        // this pointer and check if it equals the major version (4) to determine
-        // what engine version we're running on. Yes, this hack is as stupid as it
-        // sounds. In theory, GDExtensionInterfaceGetProcAddress could also start
-        // with a `4` but it doesn't make sense as an instruction to start a function
-        // on any major ISA.
-
-        let maybe_major_version = unsafe { *interface.direct_interface.cast::<u32>() };
-        let is_4_0 = maybe_major_version == 4;
-
-        macro_rules! resolve {
-            ($func:ident) => {
-                if is_4_0 {
-                    unsafe {
-                        let interface = interface.direct_interface.as_ref_unchecked();
-                        interface.$func
-                    }
-                } else {
-                    unsafe {
-                        let name = CString::from_str(stringify!($func)).unwrap();
-                        let res = (interface.get_proc_address)(name.as_ptr());
-
-                        std::mem::transmute::<_, _>(res)
-                    }
-                }
-            };
-        }
-
-        macro_rules! resolve_multiple {
-            ({ $($func:ident),*$(,)? }, {$($body:tt),*$(,)? }) => {
-                Self {
-                    $(
-                        $func: resolve!($func),
-                    )*
-                    $(
-                        $body,
-                    )*
-                }
-            }
-        }
-
-        let variant_get_ptr_constructor = resolve!(variant_get_ptr_constructor);
-        let variant_get_ptr_destructor = resolve!(variant_get_ptr_destructor);
-        let get_variant_to_type_constructor = resolve!(get_variant_to_type_constructor);
-
-        let constructor_string_name = unsafe {
-            (variant_get_ptr_constructor)(GDExtensionVariantType::StringName, 2)
-                .expect("StringName constructor should exist")
-        };
-        let constructor_string_from_variant =
-            unsafe { (get_variant_to_type_constructor)(GDExtensionVariantType::String) };
-        let destructor_string = unsafe {
-            (variant_get_ptr_destructor)(GDExtensionVariantType::String)
-                .expect("String destructor should exist")
-        };
-        let destructor_string_name = unsafe {
-            (variant_get_ptr_destructor)(GDExtensionVariantType::StringName)
-                .expect("StringName destructor should exist")
+        let construct_string_name = unsafe {
+            (interface.variant_get_ptr_constructor)(
+                GDExtensionVariantType::StringName,
+                CONSTRUCT_STRING_NAME_IDX,
+            )
+            .expect("missing constructor")
         };
 
-        resolve_multiple!({
-            variant_get_type,
+        let construct_string_name_from_string = unsafe {
+            (interface.variant_get_ptr_constructor)(
+                GDExtensionVariantType::StringName,
+                CONSTRUCT_STRING_NAME_FROM_STRING_IDX,
+            )
+            .expect("missing constructor")
+        };
 
-            string_new_with_utf8_chars_and_len,
+        let construct_string_name_from_variant = unsafe {
+            (interface.get_variant_to_type_constructor)(GDExtensionVariantType::StringName)
+                .expect("missing variant to type converter")
+        };
 
-            string_to_utf8_chars,
+        let construct_variant_from_string_name = unsafe {
+            (interface.get_variant_from_type_constructor)(GDExtensionVariantType::StringName)
+                .expect("missing type to variant converter")
+        };
 
-            object_set_instance_binding,
+        let destruct_string_name = unsafe {
+            (interface.variant_get_ptr_destructor)(GDExtensionVariantType::StringName)
+                .expect("missing destructor")
+        };
 
-            object_set_instance,
+        let construct_string = unsafe {
+            (interface.variant_get_ptr_constructor)(
+                GDExtensionVariantType::String,
+                CONSTRUCT_STRING_IDX,
+            )
+            .expect("missing constructor")
+        };
 
-            classdb_construct_object,
+        let construct_string_from_string_name = unsafe {
+            (interface.variant_get_ptr_constructor)(
+                GDExtensionVariantType::String,
+                CONSTRUCT_STRING_FROM_STRING_NAME_IDX,
+            )
+            .expect("missing constructor")
+        };
 
-            classdb_register_extension_class,
-            classdb_register_extension_class_method
-        }, {
+        let construct_string_from_variant = unsafe {
+            (interface.get_variant_to_type_constructor)(GDExtensionVariantType::String)
+                .expect("missing variant to type converter")
+        };
+
+        let construct_variant_from_string = unsafe {
+            (interface.get_variant_from_type_constructor)(GDExtensionVariantType::String)
+                .expect("missing type to variant converter")
+        };
+
+        let destruct_string = unsafe {
+            (interface.variant_get_ptr_destructor)(GDExtensionVariantType::String)
+                .expect("missing destructor")
+        };
+
+        let construct_packed_byte_array = unsafe {
+            (interface.variant_get_ptr_constructor)(
+                GDExtensionVariantType::PackedByteArray,
+                0,
+            )
+            .expect("missing constructor")
+        };
+
+        let destruct_packed_byte_array = unsafe {
+            (interface.variant_get_ptr_destructor)(GDExtensionVariantType::PackedByteArray)
+                .expect("missing destructor")
+        };
+
+        let construct_packed_byte_array_from_variant = unsafe {
+            (interface.get_variant_to_type_constructor)(GDExtensionVariantType::PackedByteArray)
+                .expect("missing variant to type constructor")
+        };
+
+        let construct_variant_from_packed_byte_array = unsafe {
+            (interface.get_variant_from_type_constructor)(GDExtensionVariantType::PackedByteArray)
+                .expect("missing variant from type constructor")
+        };
+
+        let resize_packed_byte_array = unsafe {
+            interface.lookup_built_in_method::<PackedArray<u8>>(
+                false,
+                false,
+                false,
+                "resize",
+                None,
+                &[GDExtensionVariantType::Int]
+            )
+                .expect("missing PackedByteArray::resize")
+        };
+
+        let packed_byte_array_size = unsafe {
+            interface.lookup_built_in_method::<PackedArray<u8>>(
+                false,
+                false,
+                false,
+                "size",
+                None,
+                &[]
+            )
+                .expect("missing PackedByteArray::resize")
+        };
+
+        Self {
             library,
+            interface,
 
-            constructor_string_name,
-            constructor_string_from_variant,
-            destructor_string,
-            destructor_string_name
-        })
+            construct_string_name,
+            construct_string_name_from_string,
+            construct_string_name_from_variant,
+            construct_variant_from_string_name,
+            destruct_string_name,
+
+            construct_string,
+            construct_string_from_string_name,
+            construct_string_from_variant,
+            construct_variant_from_string,
+            destruct_string,
+
+            construct_packed_byte_array,
+            destruct_packed_byte_array,
+            construct_packed_byte_array_from_variant,
+            construct_variant_from_packed_byte_array,
+            resize_packed_byte_array,
+            packed_byte_array_size,
+        }
     }
 }
 
 pub unsafe fn setup_api(
-    interface: GDExtensionInterfaceUnknown,
+    unknown_interface: GDExtensionInterfaceUnknown,
     library: GDExtensionClassLibraryPtr,
 ) {
-    let api = unsafe { GDExtensionAPI::resolve(interface, library) };
+    let interface = unsafe { unknown_interface.resolve() };
+    let api = unsafe { GDExtensionApi::resolve(interface, library) };
 
-    API.set(api).expect("API should only be initialized once")
-}
-
-pub unsafe fn get_api() -> &'static GDExtensionAPI {
-    API.get().expect("API should have been initialized")
+    API.0.set(api).expect("API should only be initialized once")
 }
