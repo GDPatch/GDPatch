@@ -1,7 +1,6 @@
-use crate::gdextension::api::GDExtensionApi;
 use crate::gdextension::sys::{
     GDExtensionClassMethodArgumentMetadata, GDExtensionPropertyInfo, GDExtensionString,
-    GDExtensionStringName, GDExtensionStringNamePtr, GDExtensionStringPtr, GDExtensionVariantType,
+    GDExtensionStringName, GDExtensionVariantType,
 };
 use gobbind::{Converter, DynamicFn, FunctionInfo, WalkArgument, WalkReturn, WalkableFn, Walker};
 use std::ptr;
@@ -26,6 +25,15 @@ struct OwnedArgument {
     pub metadata: GDExtensionClassMethodArgumentMetadata,
 }
 
+impl OwnedArgument {
+    pub fn new(type_: GDExtensionVariantType) -> Self {
+        Self {
+            type_,
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct GDExtensionWalker<'builder> {
     builder: &'builder mut GDClassBuilder,
@@ -45,8 +53,7 @@ impl<'state> WalkReturn<'state, ()> for GDExtensionWalker<'state> {
 
 impl<'state> WalkReturn<'state, bool> for GDExtensionWalker<'state> {
     fn walk(&mut self) -> Result<(), Self::Error> {
-        let mut info = OwnedArgument::default();
-        info.type_ = GDExtensionVariantType::Bool;
+        let info = OwnedArgument::new(GDExtensionVariantType::Bool);
         self.return_type = Some(info);
 
         Ok(())
@@ -81,7 +88,7 @@ impl<'state> WalkArgument<'state, String> for GDExtensionWalker<'state> {
 struct GDClassBuilder {}
 
 impl GDClassBuilder {
-    pub fn add_function<'this, F, WalkerDummy, ConverterDummy>(&mut self, _f: F)
+    pub fn add_function<'this, F, WalkerDummy>(&mut self, _f: F)
     where
         F: WalkableFn<'static, 'this, GDExtensionWalker<'this>, WalkerDummy>,
         F: DynamicFn<'static, 'this, GDExtensionConverter<'this>, WalkerDummy>,

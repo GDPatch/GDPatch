@@ -19,6 +19,8 @@ impl Deref for GDExtensionApiHolder {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
+#[allow(dead_code)]
 pub struct GDExtensionApi {
     pub library: GDExtensionClassLibraryPtr,
     pub interface: GDExtensionInterface,
@@ -54,10 +56,6 @@ const CONSTRUCT_STRING_IDX: i32 = 0;
 const CONSTRUCT_STRING_FROM_STRING_NAME_IDX: i32 = 2;
 
 impl GDExtensionApi {
-    pub fn try_instance() -> Option<&'static GDExtensionApi> {
-        API.0.get()
-    }
-
     unsafe fn resolve(
         interface: GDExtensionInterface,
         library: GDExtensionClassLibraryPtr,

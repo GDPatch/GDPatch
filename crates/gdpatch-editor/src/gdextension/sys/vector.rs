@@ -153,3 +153,12 @@ impl GDExtensionType for PackedArray<u8> {
         }
     }
 }
+
+impl<T> Drop for PackedArray<T> {
+    // TODO
+    fn drop(&mut self) {
+        unsafe {
+            (API.destruct_packed_byte_array)(&raw mut *self as GDExtensionTypePtr);
+        }
+    }
+}

@@ -1,3 +1,4 @@
+#![allow(dead_code, unused)]
 use crate::{Consumes, Converter, DynamicFn, Provides};
 use gobbind::FunctionInfo;
 use gobbind_macros::gobbind;

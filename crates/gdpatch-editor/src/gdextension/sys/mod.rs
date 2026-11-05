@@ -26,7 +26,7 @@ mod variant;
 mod vector;
 
 pub use self::after_v41::*;
-pub use self::string::{GDExtensionString, GDExtensionStringName};
+pub use self::string::GDExtensionStringName;
 pub use self::v40::*;
 pub use self::variant::GDExtensionVariant;
 pub use self::vector::PackedArray;
@@ -88,9 +88,9 @@ impl GDExtensionInterfaceUnknown {
     }
 }
 
+#[allow(unused)] // TODO
 pub trait GDExtensionType {
     const VARIANT_TYPE: GDExtensionVariantType;
-
     fn new() -> Self;
 
     fn from_variant(variant: &GDExtensionVariant) -> Self;
