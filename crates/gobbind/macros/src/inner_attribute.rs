@@ -6,15 +6,14 @@ use syn::parse::{Parse, ParseStream};
 use syn::{Attribute, Error, Expr, LitStr, Token};
 
 pub struct CustomAttribute {
-    pub at_token: Token![@],
-    pub expr: Expr,
+    pub expr: Box<Expr>,
 }
 
 impl Parse for CustomAttribute {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let at_token = input.parse::<Token![@]>()?;
-        let expr = input.parse::<Expr>()?;
-        Ok(CustomAttribute { at_token, expr })
+        input.parse::<Token![@]>()?;
+        let expr = Box::new(input.parse::<Expr>()?);
+        Ok(CustomAttribute { expr })
     }
 }
 
