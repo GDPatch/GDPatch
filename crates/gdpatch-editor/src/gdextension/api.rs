@@ -1,4 +1,9 @@
-use crate::gdextension::sys::{GDExtensionClassLibraryPtr, GDExtensionConstTypePtr, GDExtensionInterface, GDExtensionInterfaceUnknown, GDExtensionPtrBuiltInMethod, GDExtensionPtrConstructor, GDExtensionPtrDestructor, GDExtensionTypeFromVariantConstructorFunc, GDExtensionVariantFromTypeConstructorFunc, GDExtensionVariantType, PackedArray};
+use crate::gdextension::sys::{
+    GDExtensionClassLibraryPtr, GDExtensionInterface, GDExtensionInterfaceUnknown,
+    GDExtensionPtrBuiltInMethod, GDExtensionPtrConstructor, GDExtensionPtrDestructor,
+    GDExtensionTypeFromVariantConstructorFunc, GDExtensionVariantFromTypeConstructorFunc,
+    GDExtensionVariantType, PackedArray,
+};
 use std::ops::Deref;
 use std::sync::OnceLock;
 
@@ -13,7 +18,7 @@ impl Deref for GDExtensionApiHolder {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct GDExtensionApi {
     pub library: GDExtensionClassLibraryPtr,
     pub interface: GDExtensionInterface,
@@ -34,8 +39,8 @@ pub struct GDExtensionApi {
     pub destruct_packed_byte_array: GDExtensionPtrDestructor,
     pub construct_packed_byte_array_from_variant: GDExtensionTypeFromVariantConstructorFunc,
     pub construct_variant_from_packed_byte_array: GDExtensionVariantFromTypeConstructorFunc,
-    pub resize_packed_byte_array: GDExtensionPtrBuiltInMethod,
-    pub packed_byte_array_size: GDExtensionPtrBuiltInMethod,
+
+    built_in_methods: OnceLock<GDExtensionBuiltInMethods>,
 }
 
 unsafe impl Send for GDExtensionApi {}
@@ -120,11 +125,8 @@ impl GDExtensionApi {
         };
 
         let construct_packed_byte_array = unsafe {
-            (interface.variant_get_ptr_constructor)(
-                GDExtensionVariantType::PackedByteArray,
-                0,
-            )
-            .expect("missing constructor")
+            (interface.variant_get_ptr_constructor)(GDExtensionVariantType::PackedByteArray, 0)
+                .expect("missing constructor")
         };
 
         let destruct_packed_byte_array = unsafe {
@@ -140,30 +142,6 @@ impl GDExtensionApi {
         let construct_variant_from_packed_byte_array = unsafe {
             (interface.get_variant_from_type_constructor)(GDExtensionVariantType::PackedByteArray)
                 .expect("missing variant from type constructor")
-        };
-
-        let resize_packed_byte_array = unsafe {
-            interface.lookup_built_in_method::<PackedArray<u8>>(
-                false,
-                false,
-                false,
-                "resize",
-                None,
-                &[GDExtensionVariantType::Int]
-            )
-                .expect("missing PackedByteArray::resize")
-        };
-
-        let packed_byte_array_size = unsafe {
-            interface.lookup_built_in_method::<PackedArray<u8>>(
-                false,
-                false,
-                false,
-                "size",
-                None,
-                &[]
-            )
-                .expect("missing PackedByteArray::resize")
         };
 
         Self {
@@ -186,6 +164,53 @@ impl GDExtensionApi {
             destruct_packed_byte_array,
             construct_packed_byte_array_from_variant,
             construct_variant_from_packed_byte_array,
+
+            built_in_methods: OnceLock::new(),
+        }
+    }
+
+    fn built_in_methods(&self) -> &GDExtensionBuiltInMethods {
+        self.built_in_methods
+            .get()
+            .expect("built in methods should have been initialized")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GDExtensionBuiltInMethods {
+    pub resize_packed_byte_array: GDExtensionPtrBuiltInMethod,
+    pub packed_byte_array_size: GDExtensionPtrBuiltInMethod,
+}
+
+impl GDExtensionBuiltInMethods {
+    unsafe fn resolve() -> Self {
+        let resize_packed_byte_array = unsafe {
+            API.interface
+                .lookup_built_in_method::<PackedArray<u8>>(
+                    false,
+                    false,
+                    false,
+                    "resize",
+                    Some(GDExtensionVariantType::Int),
+                    &[GDExtensionVariantType::Int],
+                )
+                .expect("missing PackedByteArray::resize")
+        };
+
+        let packed_byte_array_size = unsafe {
+            API.interface
+                .lookup_built_in_method::<PackedArray<u8>>(
+                    true,
+                    false,
+                    false,
+                    "size",
+                    Some(GDExtensionVariantType::Int),
+                    &[],
+                )
+                .expect("missing PackedByteArray::size")
+        };
+
+        Self {
             resize_packed_byte_array,
             packed_byte_array_size,
         }
@@ -198,6 +223,11 @@ pub unsafe fn setup_api(
 ) {
     let interface = unsafe { unknown_interface.resolve() };
     let api = unsafe { GDExtensionApi::resolve(interface, library) };
+    API.0.set(api).expect("API should only be initialized once");
 
-    API.0.set(api).expect("API should only be initialized once")
+    // Built-in methods are initialized after the API global, as resolving built-in methods requires use of the API global to construct strings.
+    let built_in_methods = unsafe { GDExtensionBuiltInMethods::resolve() };
+    API.built_in_methods
+        .set(built_in_methods)
+        .expect("built in methods should only be initialized once")
 }
