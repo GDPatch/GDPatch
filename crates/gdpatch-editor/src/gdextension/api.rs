@@ -169,7 +169,7 @@ impl GDExtensionApi {
         }
     }
 
-    fn built_in_methods(&self) -> &GDExtensionBuiltInMethods {
+    pub fn built_in_methods(&self) -> &GDExtensionBuiltInMethods {
         self.built_in_methods
             .get()
             .expect("built in methods should have been initialized")
