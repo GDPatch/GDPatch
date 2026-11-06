@@ -1,9 +1,11 @@
 //! GDExtension entrypoint and global state.
 
+use crate::GDPatchPack;
+use crate::gdextension::GDClass;
 use crate::gdextension::api::setup_api;
 use crate::gdextension::sys::{
     GDExtensionClassLibraryPtr, GDExtensionInitialization, GDExtensionInitializationLevel,
-    GDExtensionInterfaceUnknown, GDExtensionType, PackedArray,
+    GDExtensionInterfaceUnknown,
 };
 use std::ffi::c_void;
 
@@ -34,17 +36,8 @@ unsafe extern "C" fn initialize(_userdata: *mut c_void, level: GDExtensionInitia
         return;
     }
 
-    let mut a = PackedArray::<u8>::new();
-
-    println!("{}", a.len());
-    a.resize(100);
-    println!("{}", a.len());
-
-    println!("{}", a[21]);
-    a[21] = 69;
-    println!("{}", a[21]);
-
-    drop(a);
+    let mut pack = GDClass::new("GDPatchPack");
+    pack.add_function(GDPatchPack::set_pack);
 }
 
 unsafe extern "C" fn deinitialize(_userdata: *mut c_void, level: GDExtensionInitializationLevel) {

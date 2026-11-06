@@ -266,10 +266,10 @@ pub type GDExtensionClassGetRID =
 #[derive(Debug, Copy, Clone)]
 pub struct GDExtensionPropertyInfo {
     pub type_: GDExtensionVariantType,
-    pub name: GDExtensionStringNamePtr,
-    pub class_name: GDExtensionStringNamePtr,
+    pub name: GDExtensionConstStringNamePtr,
+    pub class_name: GDExtensionConstStringNamePtr,
     pub hint: u32,
-    pub hint_string: GDExtensionStringPtr,
+    pub hint_string: GDExtensionConstStringPtr,
     pub usage: u32,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
@@ -366,20 +366,20 @@ pub type GDExtensionClassGetVirtual = unsafe extern "C" fn(
 pub struct GDExtensionClassCreationInfo {
     pub is_virtual: GDExtensionBool,
     pub is_abstract: GDExtensionBool,
-    pub set_func: GDExtensionClassSet,
-    pub get_func: GDExtensionClassGet,
-    pub get_property_list_func: GDExtensionClassGetPropertyList,
-    pub free_property_list_func: GDExtensionClassFreePropertyList,
-    pub property_can_revert_func: GDExtensionClassPropertyCanRevert,
-    pub property_get_revert_func: GDExtensionClassPropertyGetRevert,
-    pub notification_func: GDExtensionClassNotification,
-    pub to_string_func: GDExtensionClassToString,
-    pub reference_func: GDExtensionClassReference,
-    pub unreference_func: GDExtensionClassUnreference,
+    pub set_func: Option<GDExtensionClassSet>,
+    pub get_func: Option<GDExtensionClassGet>,
+    pub get_property_list_func: Option<GDExtensionClassGetPropertyList>,
+    pub free_property_list_func: Option<GDExtensionClassFreePropertyList>,
+    pub property_can_revert_func: Option<GDExtensionClassPropertyCanRevert>,
+    pub property_get_revert_func: Option<GDExtensionClassPropertyGetRevert>,
+    pub notification_func: Option<GDExtensionClassNotification>,
+    pub to_string_func: Option<GDExtensionClassToString>,
+    pub reference_func: Option<GDExtensionClassReference>,
+    pub unreference_func: Option<GDExtensionClassUnreference>,
     pub create_instance_func: GDExtensionClassCreateInstance,
     pub free_instance_func: GDExtensionClassFreeInstance,
-    pub get_virtual_func: GDExtensionClassGetVirtual,
-    pub get_rid_func: GDExtensionClassGetRID,
+    pub get_virtual_func: Option<GDExtensionClassGetVirtual>,
+    pub get_rid_func: Option<GDExtensionClassGetRID>,
     pub class_userdata: *mut c_void,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
@@ -500,19 +500,19 @@ pub type GDExtensionClassMethodPtrCall = unsafe extern "C" fn(
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct GDExtensionClassMethodInfo {
-    pub name: GDExtensionStringNamePtr,
+    pub name: GDExtensionConstStringNamePtr,
     pub method_userdata: *mut c_void,
     pub call_func: GDExtensionClassMethodCall,
     pub ptrcall_func: GDExtensionClassMethodPtrCall,
     pub method_flags: u32,
     pub has_return_value: GDExtensionBool,
-    pub return_value_info: *mut GDExtensionPropertyInfo,
+    pub return_value_info: *const GDExtensionPropertyInfo,
     pub return_value_metadata: GDExtensionClassMethodArgumentMetadata,
     pub argument_count: u32,
-    pub arguments_info: *mut GDExtensionPropertyInfo,
-    pub arguments_metadata: *mut GDExtensionClassMethodArgumentMetadata,
+    pub arguments_info: *const GDExtensionPropertyInfo,
+    pub arguments_metadata: *const GDExtensionClassMethodArgumentMetadata,
     pub default_argument_count: u32,
-    pub default_arguments: *mut GDExtensionVariantPtr,
+    pub default_arguments: *const GDExtensionVariantPtr,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
