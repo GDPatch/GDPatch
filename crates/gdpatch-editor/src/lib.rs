@@ -179,7 +179,7 @@ impl GDPatchPack {
         }
     }
 
-    pub fn get_file(path: String) -> Option<Vec<u8>> {
+    /*pub fn get_file(path: String) -> Option<Vec<u8>> {
         let current_pack = CURRENT_PACK.lock();
         let current_pack = current_pack.borrow();
         if let Some(current_pack) = current_pack.as_ref() {
@@ -187,9 +187,9 @@ impl GDPatchPack {
         } else {
             None
         }
-    }
+    }*/
 
-    pub fn get_uid(path: String) -> Option<u64> {
+    /*pub fn get_uid(path: String) -> Option<u64> {
         let current_pack = CURRENT_PACK.lock();
         let current_pack = current_pack.borrow();
         if let Some(current_pack) = current_pack.as_ref() {
@@ -197,7 +197,7 @@ impl GDPatchPack {
         } else {
             None
         }
-    }
+    }*/
 }
 
 pub fn init_filesilly(base_path: &Path) {
