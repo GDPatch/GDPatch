@@ -232,9 +232,9 @@ pub type GDExtensionInstanceBindingReferenceCallback = unsafe extern "C" fn(
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct GDExtensionInstanceBindingCallbacks {
-    pub create_callback: GDExtensionInstanceBindingCreateCallback,
-    pub free_callback: GDExtensionInstanceBindingFreeCallback,
-    pub reference_callback: GDExtensionInstanceBindingReferenceCallback,
+    pub create_callback: Option<GDExtensionInstanceBindingCreateCallback>,
+    pub free_callback: Option<GDExtensionInstanceBindingFreeCallback>,
+    pub reference_callback: Option<GDExtensionInstanceBindingReferenceCallback>,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {

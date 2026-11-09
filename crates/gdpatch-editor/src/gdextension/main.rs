@@ -8,7 +8,7 @@ use crate::gdextension::sys::{
     GDExtensionInterfaceUnknown,
 };
 use std::ffi::c_void;
-
+use std::mem;
 // #[global_allocator]
 // pub static ALLOCATOR: GDExtensionAllocator = GDExtensionAllocator;
 
@@ -36,8 +36,9 @@ unsafe extern "C" fn initialize(_userdata: *mut c_void, level: GDExtensionInitia
         return;
     }
 
-    let mut pack = GDClass::new("GDPatchPack");
-    pack.add_function(GDPatchPack::set_pack);
+    let mut class = GDClass::<GDPatchPack>::new("GDPatchPack");
+    class.add_function(GDPatchPack::set_pack);
+    mem::forget(class); // TODO: drop unregisters
 }
 
 unsafe extern "C" fn deinitialize(_userdata: *mut c_void, level: GDExtensionInitializationLevel) {

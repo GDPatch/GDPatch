@@ -1,33 +1,24 @@
-use std::{ffi::c_void, ptr};
-
-use crate::gdextension::{
-    api::API,
-    sys::{
-        GDExtensionBool, GDExtensionCallError, GDExtensionCallErrorType,
-        GDExtensionClassCreationInfo, GDExtensionClassInstancePtr,
-        GDExtensionClassMethodArgumentMetadata, GDExtensionClassMethodFlags,
-        GDExtensionClassMethodInfo, GDExtensionConstTypePtr, GDExtensionConstVariantPtr,
-        GDExtensionInt, GDExtensionObjectPtr, GDExtensionPropertyInfo, GDExtensionString,
-        GDExtensionStringName, GDExtensionStringPtr, GDExtensionType, GDExtensionTypePtr,
-        GDExtensionVariantPtr, GDExtensionVariantType, PackedArray,
-    },
-};
-use gobbind::{
-    Consumes, Converter, FunctionInfo, Provides, WalkArgument, WalkReturn, WalkableFn, Walker,
-};
+use crate::gdextension::api::API;
+use crate::gdextension::sys::{GDExtensionBool, GDExtensionCallError, GDExtensionClassCreationInfo, GDExtensionClassInstancePtr, GDExtensionClassMethodArgumentMetadata, GDExtensionClassMethodFlags, GDExtensionClassMethodInfo, GDExtensionConstTypePtr, GDExtensionConstVariantPtr, GDExtensionInstanceBindingCallbacks, GDExtensionInt, GDExtensionObjectPtr, GDExtensionPropertyInfo, GDExtensionString, GDExtensionStringName, GDExtensionStringPtr, GDExtensionType, GDExtensionTypePtr, GDExtensionVariant, GDExtensionVariantPtr, GDExtensionVariantType, PackedArray};
+use gobbind::{Consumes, Converter, DynamicFn, FunctionInfo, Provides, WalkArgument, WalkReturn, WalkableFn, Walker};
+use std::marker::PhantomData;
+use std::mem::ManuallyDrop;
+use std::{ffi::c_void, mem, ptr};
+use gdpatch_godot::variant::Variant;
 
 #[derive(Debug)]
-pub struct GDExtensionPtrcallConverter {
+pub struct GDExtensionPtrcallConverter<Class> {
     instance: GDExtensionClassInstancePtr,
     args: *const GDExtensionConstTypePtr,
     ret: GDExtensionTypePtr,
+    phantom: PhantomData<Class>,
 }
 
-impl<'state> Converter<'state> for GDExtensionPtrcallConverter {
+impl<'state, Class> Converter<'state> for GDExtensionPtrcallConverter<Class> {
     type Error = ();
 }
 
-impl<'state> Provides<'state, String> for GDExtensionPtrcallConverter {
+impl<'state, Class> Provides<'state, String> for GDExtensionPtrcallConverter<Class> {
     fn provide(&mut self) -> Result<String, Self::Error> {
         let argument = unsafe { *self.args } as GDExtensionStringPtr;
         unsafe {
@@ -39,7 +30,7 @@ impl<'state> Provides<'state, String> for GDExtensionPtrcallConverter {
     }
 }
 
-impl<'state> Consumes<'state, bool> for GDExtensionPtrcallConverter {
+impl<'state, Class> Consumes<'state, bool> for GDExtensionPtrcallConverter<Class> {
     fn consume(&mut self, value: bool) -> Result<(), Self::Error> {
         unsafe {
             *(self.ret as *mut GDExtensionBool) = value as GDExtensionBool;
@@ -49,7 +40,7 @@ impl<'state> Consumes<'state, bool> for GDExtensionPtrcallConverter {
     }
 }
 
-impl<'state> Consumes<'state, u64> for GDExtensionPtrcallConverter {
+impl<'state, Class> Consumes<'state, u64> for GDExtensionPtrcallConverter<Class> {
     fn consume(&mut self, value: u64) -> Result<(), Self::Error> {
         unsafe {
             *(self.ret as *mut GDExtensionInt) = value as GDExtensionInt;
@@ -59,7 +50,7 @@ impl<'state> Consumes<'state, u64> for GDExtensionPtrcallConverter {
     }
 }
 
-impl<'state> Consumes<'state, Vec<u8>> for GDExtensionPtrcallConverter {
+impl<'state, Class> Consumes<'state, Vec<u8>> for GDExtensionPtrcallConverter<Class> {
     fn consume(&mut self, value: Vec<u8>) -> Result<(), Self::Error> {
         let array = unsafe { (self.ret as *mut PackedArray<u8>).as_mut_unchecked() };
         array.resize(value.len());
@@ -68,14 +59,21 @@ impl<'state> Consumes<'state, Vec<u8>> for GDExtensionPtrcallConverter {
     }
 }
 
+impl<'state, Class> Consumes<'state, ()> for GDExtensionPtrcallConverter<Class> {
+    fn consume(&mut self, _: ()) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
-pub struct GDExtensionVariantConverter {
+pub struct GDExtensionVariantConverter<Class> {
     instance: GDExtensionClassInstancePtr,
     args: *const GDExtensionConstVariantPtr,
     r#return: GDExtensionVariantPtr,
+    marker: PhantomData<Class>,
 }
 
-impl GDExtensionVariantConverter {
+impl<Class> GDExtensionVariantConverter<Class> {
     pub fn next_arg<T: GDExtensionType>(&mut self) -> Option<T> {
         let argument = unsafe { *self.args };
         unsafe {
@@ -93,20 +91,30 @@ impl GDExtensionVariantConverter {
     }
 }
 
-impl<'state> Converter<'state> for GDExtensionVariantConverter {
+impl<'state, Class> Converter<'state> for GDExtensionVariantConverter<Class> {
     type Error = GDExtensionCallError;
 }
 
-impl<'state> Provides<'state, String> for GDExtensionVariantConverter {
+impl<'state, Class> Provides<'state, String> for GDExtensionVariantConverter<Class> {
     fn provide(&mut self) -> Result<String, Self::Error> {
         let argument = self.next_arg::<GDExtensionString>().unwrap(); // TODO
         Ok((&argument).into())
     }
 }
 
-impl<'state> Consumes<'state, String> for GDExtensionVariantConverter {
+impl<'state, Class> Consumes<'state, String> for GDExtensionVariantConverter<Class> {
     fn consume(&mut self, value: String) -> Result<(), Self::Error> {
         self.return_arg(GDExtensionString::from(value.as_str()));
+        Ok(())
+    }
+}
+
+impl<'state, Class> Consumes<'state, ()> for GDExtensionVariantConverter<Class> {
+    fn consume(&mut self, _: ()) -> Result<(), Self::Error> {
+        unsafe {
+            *self.r#return = GDExtensionVariant::new();
+        }
+
         Ok(())
     }
 }
@@ -127,7 +135,7 @@ struct OwnedArgument {
 impl OwnedArgument {
     pub fn new(type_: GDExtensionVariantType) -> Self {
         Self {
-            type_: type_,
+            type_,
             ..Default::default()
         }
     }
@@ -135,22 +143,13 @@ impl OwnedArgument {
     pub fn as_raw(&self) -> GDExtensionPropertyInfo {
         GDExtensionPropertyInfo {
             type_: self.type_,
-            name: if let Some(name) = &self.name {
-                name
-            } else {
-                ptr::null()
-            },
-            class_name: if let Some(class_name) = &self.class_name {
-                class_name
-            } else {
-                ptr::null()
-            },
+            name: self.name.as_ref().unwrap_or(&API.strings().empty_name),
+            class_name: self
+                .class_name
+                .as_ref()
+                .unwrap_or(&API.strings().empty_name),
             hint: self.hint,
-            hint_string: if let Some(hint_string) = &self.hint_string {
-                hint_string
-            } else {
-                ptr::null()
-            },
+            hint_string: self.hint_string.as_ref().unwrap_or(&API.strings().empty),
             usage: self.usage,
         }
     }
@@ -222,44 +221,114 @@ impl<'state> WalkReturn<'state, ()> for GDExtensionWalker {
     }
 }
 
+pub trait GDClassShaped {
+    fn new() -> Self;
+}
+
 #[derive(Debug)]
-pub struct GDClass {
-    class_name: GDExtensionStringName,
+pub struct GDClass<T> {
+    userdata: ManuallyDrop<Box<GDClassUserData>>,
+    marker: PhantomData<T>,
 }
 
-unsafe extern "C" fn create_instance_impl(p_userdata: *mut c_void) -> GDExtensionObjectPtr {
-    todo!()
+#[derive(Debug)]
+struct GDClassUserData {
+    pub parent_name: GDExtensionStringName,
+    pub class_name: GDExtensionStringName,
 }
 
-unsafe extern "C" fn free_instance_impl(
-    p_userdata: *mut c_void,
-    p_instance: GDExtensionClassInstancePtr,
-) {
-    todo!()
+unsafe extern "C" fn create_instance_impl<T>(userdata_ptr: *mut c_void) -> GDExtensionObjectPtr
+where
+    T: GDClassShaped,
+{
+    let instance = T::new();
+    let ptr = Box::into_raw(Box::new(instance)) as GDExtensionClassInstancePtr;
+
+    let callbacks = GDExtensionInstanceBindingCallbacks {
+        create_callback: None,
+        free_callback: None,
+        reference_callback: None,
+    };
+
+    unsafe {
+        let userdata = &*userdata_ptr.cast::<GDClassUserData>();
+        let object = (API.interface.classdb_construct_object)(&raw const userdata.parent_name);
+        (API.interface.object_set_instance)(object, &raw const userdata.class_name, ptr);
+        (API.interface.object_set_instance_binding)(object, API.library, ptr, &raw const callbacks);
+
+        object
+    }
 }
 
-unsafe extern "C" fn call_impl(
-    method_userdata: *mut c_void,
+unsafe extern "C" fn free_instance_impl<T>(
+    _userdata_ptr: *mut c_void,
+    instance: GDExtensionClassInstancePtr,
+) where
+    T: GDClassShaped,
+{
+    let boxed = unsafe { Box::from_raw(instance.cast::<T>()) };
+    drop(boxed);
+}
+
+unsafe extern "C" fn call_impl<Class, Fn, Dummy>(
+    method_userdata_ptr: *mut c_void,
     p_instance: GDExtensionClassInstancePtr,
     p_args: *const GDExtensionConstVariantPtr,
     p_argument_count: GDExtensionInt,
     r_return: GDExtensionVariantPtr,
     r_error: *mut GDExtensionCallError,
-) {
-    todo!()
+)
+where
+    Fn: DynamicFn<'static, 'static, GDExtensionVariantConverter<Class>, Dummy>
+{
+    let method_userdata = unsafe { &*method_userdata_ptr.cast::<Fn>() };
+
+    let mut converter = GDExtensionVariantConverter {
+        instance: p_instance,
+        args: p_args,
+        r#return: r_return,
+        marker: PhantomData,
+    };
+
+    let result = method_userdata.call_dynamic(&mut converter);
+
+    if let Err(error) = result {
+        unsafe {
+            *r_error = error;
+        }
+    }
 }
 
-unsafe extern "C" fn ptrcall_impl(
-    method_userdata: *mut c_void,
+unsafe extern "C" fn ptrcall_impl<Class, Fn, Dummy>(
+    method_userdata_ptr: *mut c_void,
     p_instance: GDExtensionClassInstancePtr,
     p_args: *const GDExtensionConstTypePtr,
     r_ret: GDExtensionTypePtr,
-) {
-    todo!()
+) where
+    Fn: DynamicFn<'static, 'static, GDExtensionPtrcallConverter<Class>, Dummy>
+{
+    let method_userdata = unsafe { &*method_userdata_ptr.cast::<Fn>() };
+
+    let mut converter = GDExtensionPtrcallConverter {
+        instance: p_instance,
+        args: p_args,
+        ret: r_ret,
+        phantom: PhantomData,
+    };
+
+    let _ = method_userdata.call_dynamic(&mut converter);
 }
 
-impl GDClass {
+impl<Class> GDClass<Class>
+where
+    Class: GDClassShaped,
+{
     pub fn new(class_name: &str) -> Self {
+        let class_userdata = ManuallyDrop::new(Box::new(GDClassUserData {
+            parent_name: API.strings().object.clone(),
+            class_name: class_name.into(),
+        }));
+
         let class_info = GDExtensionClassCreationInfo {
             is_virtual: 0,
             is_abstract: 0,
@@ -273,38 +342,40 @@ impl GDClass {
             to_string_func: None,
             reference_func: None,
             unreference_func: None,
-            create_instance_func: create_instance_impl,
-            free_instance_func: free_instance_impl,
+            create_instance_func: create_instance_impl::<Class>,
+            free_instance_func: free_instance_impl::<Class>,
             get_virtual_func: None,
             get_rid_func: None,
-            class_userdata: ptr::null_mut(),
+            class_userdata: Box::as_ptr(&class_userdata) as *mut c_void,
         };
 
-        let class_name = GDExtensionStringName::from(class_name);
-        let parent_class_name = GDExtensionStringName::from("Node");
         unsafe {
             (API.interface.classdb_register_extension_class)(
                 API.library,
-                &raw const class_name,
-                &raw const parent_class_name,
+                &raw const class_userdata.class_name,
+                &raw const class_userdata.parent_name,
                 &raw const class_info,
             );
         }
 
-        Self { class_name }
+        Self {
+            userdata: class_userdata,
+            marker: PhantomData,
+        }
     }
 
-    pub fn add_function<'this, F, WalkerDummy>(&'this mut self, function: F)
+    pub fn add_function<'this, Fn, Dummy>(&'this mut self, function: Fn)
     where
-        F: WalkableFn<'static, 'this, GDExtensionWalker, WalkerDummy>,
-        //F: DynamicFn<'static, 'this, GDExtensionConverter<'this>, WalkerDummy>,
+        Fn: WalkableFn<'static, 'this, GDExtensionWalker, Dummy>,
+        Fn: DynamicFn<'static, 'static, GDExtensionPtrcallConverter<Class>, Dummy>,
+        Fn: DynamicFn<'static, 'static, GDExtensionVariantConverter<Class>, Dummy>,
     {
-        let Some(info) = FunctionInfo::of::<F>() else {
+        let Some(info) = FunctionInfo::of::<Fn>() else {
             panic!("cannot bind a function without reflection info")
         };
 
         let name = GDExtensionStringName::from(info.name());
-        let method_flags = GDExtensionClassMethodFlags::NORMAL;
+        let method_flags = GDExtensionClassMethodFlags::STATIC;
 
         let mut walker = GDExtensionWalker::default();
         function.walk(&mut walker).unwrap(); // FIXME
@@ -323,10 +394,10 @@ impl GDClass {
 
         let method_info = GDExtensionClassMethodInfo {
             name: &name,
-            method_userdata: ptr::null_mut(),
+            method_userdata: unsafe { mem::transmute::<&Fn, *mut c_void>(&function) },
 
-            call_func: call_impl,
-            ptrcall_func: ptrcall_impl,
+            call_func: call_impl::<Class, Fn, _>,
+            ptrcall_func: ptrcall_impl::<Class, Fn, _>,
             method_flags: method_flags.0 as u32,
 
             has_return_value: if return_type.is_some() { 1 } else { 0 },
@@ -348,9 +419,22 @@ impl GDClass {
         unsafe {
             (API.interface.classdb_register_extension_class_method)(
                 API.library,
-                &self.class_name,
+                &self.userdata.class_name,
                 &raw const method_info,
             );
+        }
+    }
+}
+
+impl<T> Drop for GDClass<T> {
+    fn drop(&mut self) {
+        unsafe {
+            (API.interface.classdb_unregister_extension_class)(
+                API.library,
+                &self.userdata.class_name,
+            );
+
+            ManuallyDrop::drop(&mut self.userdata);
         }
     }
 }

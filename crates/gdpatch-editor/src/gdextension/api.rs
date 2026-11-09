@@ -1,9 +1,4 @@
-use crate::gdextension::sys::{
-    GDExtensionClassLibraryPtr, GDExtensionInterface, GDExtensionInterfaceUnknown,
-    GDExtensionPtrBuiltInMethod, GDExtensionPtrConstructor, GDExtensionPtrDestructor,
-    GDExtensionTypeFromVariantConstructorFunc, GDExtensionVariantFromTypeConstructorFunc,
-    GDExtensionVariantType, PackedArray,
-};
+use crate::gdextension::sys::{GDExtensionClassLibraryPtr, GDExtensionInterface, GDExtensionInterfaceUnknown, GDExtensionPtrBuiltInMethod, GDExtensionPtrConstructor, GDExtensionPtrDestructor, GDExtensionString, GDExtensionStringName, GDExtensionTypeFromVariantConstructorFunc, GDExtensionVariantFromTypeConstructorFunc, GDExtensionVariantType, PackedArray};
 use std::ops::Deref;
 use std::sync::OnceLock;
 
@@ -26,12 +21,14 @@ pub struct GDExtensionApi {
     pub interface: GDExtensionInterface,
 
     pub construct_string_name: GDExtensionPtrConstructor,
+    pub construct_string_name_from_string_name: GDExtensionPtrConstructor,
     pub construct_string_name_from_string: GDExtensionPtrConstructor,
     pub construct_string_name_from_variant: GDExtensionTypeFromVariantConstructorFunc,
     pub construct_variant_from_string_name: GDExtensionVariantFromTypeConstructorFunc,
     pub destruct_string_name: GDExtensionPtrDestructor,
 
     pub construct_string: GDExtensionPtrConstructor,
+    pub construct_string_from_string: GDExtensionPtrConstructor,
     pub construct_string_from_string_name: GDExtensionPtrConstructor,
     pub construct_string_from_variant: GDExtensionTypeFromVariantConstructorFunc,
     pub construct_variant_from_string: GDExtensionVariantFromTypeConstructorFunc,
@@ -43,6 +40,7 @@ pub struct GDExtensionApi {
     pub construct_variant_from_packed_byte_array: GDExtensionVariantFromTypeConstructorFunc,
 
     built_in_methods: OnceLock<GDExtensionBuiltInMethods>,
+    strings: OnceLock<GDExtensionStrings>,
 }
 
 unsafe impl Send for GDExtensionApi {}
@@ -50,9 +48,11 @@ unsafe impl Sync for GDExtensionApi {}
 
 // https://github.com/godotengine/godot/blob/4.0-stable/core/variant/variant_construct.cpp#L58
 const CONSTRUCT_STRING_NAME_IDX: i32 = 0;
+const CONSTRUCT_STRING_NAME_FROM_STRING_NAME_IDX: i32 = 1;
 const CONSTRUCT_STRING_NAME_FROM_STRING_IDX: i32 = 2;
 
 const CONSTRUCT_STRING_IDX: i32 = 0;
+const CONSTRUCT_STRING_FROM_STRING_IDX: i32 = 1;
 const CONSTRUCT_STRING_FROM_STRING_NAME_IDX: i32 = 2;
 
 impl GDExtensionApi {
@@ -64,6 +64,14 @@ impl GDExtensionApi {
             (interface.variant_get_ptr_constructor)(
                 GDExtensionVariantType::StringName,
                 CONSTRUCT_STRING_NAME_IDX,
+            )
+            .expect("missing constructor")
+        };
+
+        let construct_string_name_from_string_name = unsafe {
+            (interface.variant_get_ptr_constructor)(
+                GDExtensionVariantType::StringName,
+                CONSTRUCT_STRING_NAME_FROM_STRING_NAME_IDX,
             )
             .expect("missing constructor")
         };
@@ -97,6 +105,14 @@ impl GDExtensionApi {
                 CONSTRUCT_STRING_IDX,
             )
             .expect("missing constructor")
+        };
+
+        let construct_string_from_string = unsafe {
+            (interface.variant_get_ptr_constructor)(
+                GDExtensionVariantType::String,
+                CONSTRUCT_STRING_FROM_STRING_IDX,
+            )
+                .expect("missing constructor")
         };
 
         let construct_string_from_string_name = unsafe {
@@ -147,12 +163,14 @@ impl GDExtensionApi {
             interface,
 
             construct_string_name,
+            construct_string_name_from_string_name,
             construct_string_name_from_string,
             construct_string_name_from_variant,
             construct_variant_from_string_name,
             destruct_string_name,
 
             construct_string,
+            construct_string_from_string,
             construct_string_from_string_name,
             construct_string_from_variant,
             construct_variant_from_string,
@@ -164,6 +182,7 @@ impl GDExtensionApi {
             construct_variant_from_packed_byte_array,
 
             built_in_methods: OnceLock::new(),
+            strings: OnceLock::new(),
         }
     }
 
@@ -171,6 +190,12 @@ impl GDExtensionApi {
         self.built_in_methods
             .get()
             .expect("built in methods should have been initialized")
+    }
+
+    pub fn strings(&self) -> &GDExtensionStrings {
+        self.strings
+            .get()
+            .expect("strings should have been initialized")
     }
 }
 
@@ -215,6 +240,23 @@ impl GDExtensionBuiltInMethods {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct GDExtensionStrings {
+    pub empty: GDExtensionString,
+    pub empty_name: GDExtensionStringName,
+    pub object: GDExtensionStringName,
+}
+
+impl GDExtensionStrings {
+    unsafe fn resolve() -> Self {
+        Self {
+            empty: GDExtensionString::default(),
+            empty_name: GDExtensionStringName::default(),
+            object: "Object".into(),
+        }
+    }
+}
+
 pub unsafe fn setup_api(
     unknown_interface: GDExtensionInterfaceUnknown,
     library: GDExtensionClassLibraryPtr,
@@ -223,9 +265,14 @@ pub unsafe fn setup_api(
     let api = unsafe { GDExtensionApi::resolve(interface, library) };
     API.0.set(api).expect("API should only be initialized once");
 
+    let strings = unsafe { GDExtensionStrings::resolve() };
+    API.strings
+        .set(strings)
+        .expect("strings should only be initialized once");
+
     // Built-in methods are initialized after the API global, as resolving built-in methods requires use of the API global to construct strings.
     let built_in_methods = unsafe { GDExtensionBuiltInMethods::resolve() };
     API.built_in_methods
         .set(built_in_methods)
-        .expect("built in methods should only be initialized once")
+        .expect("built in methods should only be initialized once");
 }
