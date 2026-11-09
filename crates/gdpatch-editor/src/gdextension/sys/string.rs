@@ -68,6 +68,22 @@ impl Drop for GDExtensionString {
     }
 }
 
+impl Clone for GDExtensionString {
+    fn clone(&self) -> Self {
+        let mut result = MaybeUninit::uninit();
+        let args = [&raw const *self as GDExtensionTypePtr];
+
+        unsafe {
+            (API.construct_string_from_string_name)(
+                &raw mut result as GDExtensionUninitializedTypePtr,
+                &raw const args as _,
+            );
+
+            result.assume_init()
+        }
+    }
+}
+
 impl Deref for GDExtensionString {
     type Target = [char];
 
@@ -233,6 +249,22 @@ impl From<&GDExtensionStringName> for GDExtensionVariant {
 impl Drop for GDExtensionStringName {
     fn drop(&mut self) {
         unsafe { (API.destruct_string_name)(&raw mut *self as GDExtensionTypePtr) }
+    }
+}
+
+impl Clone for GDExtensionStringName {
+    fn clone(&self) -> Self {
+        let mut result = MaybeUninit::uninit();
+        let args = [&raw const *self as GDExtensionTypePtr];
+
+        unsafe {
+            (API.construct_string_name_from_string_name)(
+                &raw mut result as GDExtensionUninitializedTypePtr,
+                &raw const args as _,
+            );
+
+            result.assume_init()
+        }
     }
 }
 

@@ -17,6 +17,7 @@ use std::{
     sync::{Arc, LazyLock},
     time::SystemTime,
 };
+use crate::gdextension::bindings::GDClassShaped;
 
 mod gdextension;
 mod hash;
@@ -123,6 +124,12 @@ impl LoadedPack {
 
 #[derive(Default)]
 pub struct GDPatchPack {}
+
+impl GDClassShaped for GDPatchPack {
+    fn new() -> Self {
+        Self::default()
+    }
+}
 
 #[gobbind]
 impl GDPatchPack {

@@ -1,5 +1,5 @@
 pub mod api;
-mod bindings;
+pub mod bindings;
 mod main;
 pub mod sys;
 
