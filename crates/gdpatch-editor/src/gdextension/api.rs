@@ -1,4 +1,9 @@
-use crate::gdextension::sys::{GDExtensionClassLibraryPtr, GDExtensionInterface, GDExtensionInterfaceUnknown, GDExtensionPtrBuiltInMethod, GDExtensionPtrConstructor, GDExtensionPtrDestructor, GDExtensionString, GDExtensionStringName, GDExtensionTypeFromVariantConstructorFunc, GDExtensionVariantFromTypeConstructorFunc, GDExtensionVariantType, PackedArray};
+use crate::gdextension::sys::{
+    GDExtensionClassLibraryPtr, GDExtensionInterface, GDExtensionInterfaceUnknown,
+    GDExtensionPtrBuiltInMethod, GDExtensionPtrConstructor, GDExtensionPtrDestructor,
+    GDExtensionString, GDExtensionStringName, GDExtensionTypeFromVariantConstructorFunc,
+    GDExtensionVariantFromTypeConstructorFunc, GDExtensionVariantType, PackedArray,
+};
 use std::ops::Deref;
 use std::sync::OnceLock;
 
@@ -112,7 +117,7 @@ impl GDExtensionApi {
                 GDExtensionVariantType::String,
                 CONSTRUCT_STRING_FROM_STRING_IDX,
             )
-                .expect("missing constructor")
+            .expect("missing constructor")
         };
 
         let construct_string_from_string_name = unsafe {

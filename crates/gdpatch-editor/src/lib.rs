@@ -1,4 +1,5 @@
 #![deny(unsafe_op_in_unsafe_fn)]
+use crate::gdextension::bindings::GDClassShaped;
 use filesilly::{Stat, StatResult};
 use gdpatch_godot::{
     ReadableMarshalBuffer, UIDCache,
@@ -17,7 +18,6 @@ use std::{
     sync::{Arc, LazyLock},
     time::SystemTime,
 };
-use crate::gdextension::bindings::GDClassShaped;
 
 mod gdextension;
 mod hash;
