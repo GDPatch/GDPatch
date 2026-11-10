@@ -3,8 +3,6 @@ entry_symbol = "gdpatch_editor_init"
 compatibility_minimum = "4.1.0"
 
 [libraries]
-linux.debug.x86_64 =     "res://../target/debug/libgdpatch_editor.so"
-linux.release.x86_64 =   "res://../target/release/libgdpatch_editor.so"
-"windows.editor" =   "res://../target/debug/gdpatch_editor.dll"
-macos.debug.arm64 =      "res://../target/debug/libgdpatch_editor.dylib"
-macos.release.arm64 =    "res://../target/release/libgdpatch_editor.dylib"
+"linux.editor" = "res://../target/debug/libgdpatch_editor.so"
+"windows.editor" = "res://../target/debug/gdpatch_editor.dll"
+"macos.editor" = "res://../target/debug/libgdpatch_editor.dylib"

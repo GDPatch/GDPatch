@@ -39,6 +39,8 @@ unsafe extern "C" fn initialize(_userdata: *mut c_void, level: GDExtensionInitia
     let mut class = GDClass::<GDPatchPack>::new("GDPatchPack");
     class.add_function(GDPatchPack::set_pack);
     mem::forget(class); // TODO: drop unregisters
+
+    println!("meow");
 }
 
 unsafe extern "C" fn deinitialize(_userdata: *mut c_void, level: GDExtensionInitializationLevel) {

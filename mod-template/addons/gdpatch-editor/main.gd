@@ -7,6 +7,7 @@ func _enter_tree():
 	var pack_path = data["pack_path"]
 	var pack = GDPatchPack.new();
 	GDPatchPack.set_pack(project_path, pack_path)
+	print("set pack!")
 
 func _exit_tree():
 	print("bye")
