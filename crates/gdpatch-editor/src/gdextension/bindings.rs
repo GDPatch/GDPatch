@@ -8,14 +8,13 @@ use crate::gdextension::sys::{
     GDExtensionStringPtr, GDExtensionType, GDExtensionTypePtr, GDExtensionVariant,
     GDExtensionVariantPtr, GDExtensionVariantType, PackedArray,
 };
-use gdpatch_godot::variant::Variant;
 use gobbind::{
     Consumes, Converter, DynamicFn, FunctionInfo, Provides, WalkArgument, WalkReturn, WalkableFn,
     Walker,
 };
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
-use std::{ffi::c_void, mem, ptr};
+use std::{ffi::c_void, ptr};
 
 #[derive(Debug)]
 pub struct GDExtensionPtrcallConverter<Class> {
@@ -285,12 +284,13 @@ unsafe extern "C" fn call_impl<Class, Fn, Dummy>(
     method_userdata_ptr: *mut c_void,
     p_instance: GDExtensionClassInstancePtr,
     p_args: *const GDExtensionConstVariantPtr,
-    p_argument_count: GDExtensionInt,
+    _p_argument_count: GDExtensionInt,
     r_return: GDExtensionVariantPtr,
     r_error: *mut GDExtensionCallError,
 ) where
     Fn: DynamicFn<'static, 'static, GDExtensionVariantConverter<Class>, Dummy>,
 {
+    // TODO: check argument counts
     let method_userdata = unsafe { &*method_userdata_ptr.cast::<Fn>() };
 
     let mut converter = GDExtensionVariantConverter {
@@ -404,7 +404,7 @@ where
 
         let method_info = GDExtensionClassMethodInfo {
             name: &name,
-            method_userdata: unsafe { mem::transmute::<&Fn, *mut c_void>(&function) },
+            method_userdata: &function as *const Fn as *mut c_void,
 
             call_func: call_impl::<Class, Fn, _>,
             ptrcall_func: ptrcall_impl::<Class, Fn, _>,
