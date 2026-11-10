@@ -1,10 +1,21 @@
 use crate::gdextension::api::API;
-use crate::gdextension::sys::{GDExtensionBool, GDExtensionCallError, GDExtensionClassCreationInfo, GDExtensionClassInstancePtr, GDExtensionClassMethodArgumentMetadata, GDExtensionClassMethodFlags, GDExtensionClassMethodInfo, GDExtensionConstTypePtr, GDExtensionConstVariantPtr, GDExtensionInstanceBindingCallbacks, GDExtensionInt, GDExtensionObjectPtr, GDExtensionPropertyInfo, GDExtensionString, GDExtensionStringName, GDExtensionStringPtr, GDExtensionType, GDExtensionTypePtr, GDExtensionVariant, GDExtensionVariantPtr, GDExtensionVariantType, PackedArray};
-use gobbind::{Consumes, Converter, DynamicFn, FunctionInfo, Provides, WalkArgument, WalkReturn, WalkableFn, Walker};
+use crate::gdextension::sys::{
+    GDExtensionBool, GDExtensionCallError, GDExtensionClassCreationInfo,
+    GDExtensionClassInstancePtr, GDExtensionClassMethodArgumentMetadata,
+    GDExtensionClassMethodFlags, GDExtensionClassMethodInfo, GDExtensionConstTypePtr,
+    GDExtensionConstVariantPtr, GDExtensionInstanceBindingCallbacks, GDExtensionInt,
+    GDExtensionObjectPtr, GDExtensionPropertyInfo, GDExtensionString, GDExtensionStringName,
+    GDExtensionStringPtr, GDExtensionType, GDExtensionTypePtr, GDExtensionVariant,
+    GDExtensionVariantPtr, GDExtensionVariantType, PackedArray,
+};
+use gdpatch_godot::variant::Variant;
+use gobbind::{
+    Consumes, Converter, DynamicFn, FunctionInfo, Provides, WalkArgument, WalkReturn, WalkableFn,
+    Walker,
+};
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::{ffi::c_void, mem, ptr};
-use gdpatch_godot::variant::Variant;
 
 #[derive(Debug)]
 pub struct GDExtensionPtrcallConverter<Class> {
@@ -277,9 +288,8 @@ unsafe extern "C" fn call_impl<Class, Fn, Dummy>(
     p_argument_count: GDExtensionInt,
     r_return: GDExtensionVariantPtr,
     r_error: *mut GDExtensionCallError,
-)
-where
-    Fn: DynamicFn<'static, 'static, GDExtensionVariantConverter<Class>, Dummy>
+) where
+    Fn: DynamicFn<'static, 'static, GDExtensionVariantConverter<Class>, Dummy>,
 {
     let method_userdata = unsafe { &*method_userdata_ptr.cast::<Fn>() };
 
@@ -305,7 +315,7 @@ unsafe extern "C" fn ptrcall_impl<Class, Fn, Dummy>(
     p_args: *const GDExtensionConstTypePtr,
     r_ret: GDExtensionTypePtr,
 ) where
-    Fn: DynamicFn<'static, 'static, GDExtensionPtrcallConverter<Class>, Dummy>
+    Fn: DynamicFn<'static, 'static, GDExtensionPtrcallConverter<Class>, Dummy>,
 {
     let method_userdata = unsafe { &*method_userdata_ptr.cast::<Fn>() };
 

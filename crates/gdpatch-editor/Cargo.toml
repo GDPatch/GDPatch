@@ -9,6 +9,9 @@ license.workspace = true
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+double-precision = []
+
 [dependencies]
 gdpatch-godot.workspace = true
 filesilly.workspace = true

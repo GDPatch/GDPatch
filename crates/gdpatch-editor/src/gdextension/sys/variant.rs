@@ -8,12 +8,18 @@ use std::mem::MaybeUninit;
 
 #[repr(C, align(8))] // data field is alignas(8)
 #[derive(Debug)]
-// If the engine is compiled with real_t as a double then Variant is 40 bytes. Most of the
-// time this will not be the case, but there is no harm in allocating too large of a variant;
-// it is only passed across the ABI boundary as a pointer.
-pub struct GDExtensionVariant([MaybeUninit<u8>; 40]);
+
+pub struct GDExtensionVariant([MaybeUninit<u8>; GDExtensionVariant::SIZE]);
 
 impl GDExtensionVariant {
+    const SIZE: usize = const {
+        if cfg!(feature = "double-precision") {
+            40
+        } else {
+            24
+        }
+    };
+
     /// Creates a new nil variant.
     pub fn new() -> Self {
         let mut result = MaybeUninit::uninit();

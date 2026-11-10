@@ -77,7 +77,7 @@ impl GDExtensionInterfaceUnknown {
         // with a `4` but it doesn't make sense as an instruction to start a function
         // on any major ISA.
 
-        let maybe_major_version = unsafe { *self.direct_interface.cast::<u32>() };
+        let maybe_major_version = unsafe { self.direct_interface.cast::<u32>().read_unaligned() };
         let is_4_0 = maybe_major_version == 4;
 
         if is_4_0 {
