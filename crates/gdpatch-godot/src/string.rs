@@ -21,11 +21,11 @@ pub fn hex_to_int(s: &str) -> i64 {
 
     let mut chars = NPeekable::new(s.chars());
 
-    let sign = if chars.peek(0) == Some('-') {
+    let negative = if chars.peek(0) == Some('-') {
         chars.next();
-        -1i64
+        true
     } else {
-        1
+        false
     };
 
     if chars.peek(0) == Some('0') && chars.peek(1).map(|c| c.to_ascii_lowercase()) == Some('x') {
@@ -33,7 +33,7 @@ pub fn hex_to_int(s: &str) -> i64 {
         chars.next();
     }
 
-    let mut result = 0i64;
+    let mut result = 0u64;
 
     for ch in chars {
         let ch = ch.to_ascii_lowercase();
@@ -51,17 +51,22 @@ pub fn hex_to_int(s: &str) -> i64 {
 
         result = result
             .checked_mul(16)
-            .and_then(|c| c.checked_add(n as i64))
+            .and_then(|c| c.checked_add(n as u64))
             .unwrap_or_else(|| {
                 panic!(
                     "Cannot represent {} as a 64-bit signed integer, since the value is too {}.",
                     s,
-                    if sign == 1 { "large" } else { "small" }
+                    if negative { "small" } else { "large" }
                 )
             });
     }
 
-    result * sign
+    let result = result.cast_signed();
+    if negative && !result.is_negative() {
+        result.strict_neg()
+    } else {
+        result
+    }
 }
 
 pub fn bin_to_int(s: &str) -> i64 {
@@ -71,11 +76,11 @@ pub fn bin_to_int(s: &str) -> i64 {
 
     let mut chars = NPeekable::new(s.chars());
 
-    let sign = if chars.peek(0) == Some('-') {
+    let negative = if chars.peek(0) == Some('-') {
         chars.next();
-        -1i64
+        true
     } else {
-        1
+        false
     };
 
     if s.len() > 2
@@ -86,7 +91,7 @@ pub fn bin_to_int(s: &str) -> i64 {
         chars.next();
     }
 
-    let mut result = 0i64;
+    let mut result = 0u64;
 
     for ch in chars {
         let ch = ch.to_ascii_lowercase();
@@ -100,17 +105,22 @@ pub fn bin_to_int(s: &str) -> i64 {
 
         result = result
             .checked_mul(2)
-            .and_then(|c| c.checked_add(n as i64))
+            .and_then(|c| c.checked_add(n as u64))
             .unwrap_or_else(|| {
                 panic!(
                     "Cannot represent {} as a 64-bit signed integer, since the value is too {}.",
                     s,
-                    if sign == 1 { "large" } else { "small" }
+                    if negative { "small" } else { "large" }
                 )
             });
     }
 
-    result * sign
+    let result = result.cast_signed();
+    if negative && !result.is_negative() {
+        result.strict_neg()
+    } else {
+        result
+    }
 }
 
 pub fn to_int(s: &str) -> i64 {
@@ -125,8 +135,8 @@ pub fn to_int(s: &str) -> i64 {
         return 0;
     }
 
-    let mut integer = 0i64;
-    let mut sign = 1i64;
+    let mut integer = 0u64;
+    let mut negative = false;
 
     let mut reading = Reading::Sign;
     let mut iter = s.chars().peekable();
@@ -140,10 +150,10 @@ pub fn to_int(s: &str) -> i64 {
                     reading = Reading::Int;
                     continue;
                 } else if ch == '-' {
-                    sign = -1;
+                    negative = true;
                     reading = Reading::Int;
                 } else if ch == '+' {
-                    sign = 1;
+                    negative = false;
                     reading = Reading::Int;
                 } else {
                     // XXX: This seems like it should explode?
@@ -155,12 +165,12 @@ pub fn to_int(s: &str) -> i64 {
 
                     integer = integer
                         .checked_mul(10)
-                        .and_then(|c| c.checked_add(n as i64))
+                        .and_then(|c| c.checked_add(n as u64))
                         .unwrap_or_else(|| {
                             panic!(
                                 "Cannot represent {} as a 64-bit signed integer, since the value is too {}.",
                                 s,
-                                if sign == 1 { "large" } else { "small" }
+                                if negative { "small" } else { "large" }
                             )
                         });
                 } else {
@@ -173,7 +183,12 @@ pub fn to_int(s: &str) -> i64 {
         iter.next();
     }
 
-    sign * integer
+    let integer = integer.cast_signed();
+    if negative && !integer.is_negative() {
+        integer.strict_neg()
+    } else {
+        integer
+    }
 }
 
 pub fn to_float(s: &str) -> f64 {
