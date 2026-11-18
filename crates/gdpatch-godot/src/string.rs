@@ -33,7 +33,7 @@ pub fn hex_to_int(s: &str) -> i64 {
         chars.next();
     }
 
-    let mut result = 0u64;
+    let mut result = 0i64;
 
     for ch in chars {
         let ch = ch.to_ascii_lowercase();
@@ -51,7 +51,13 @@ pub fn hex_to_int(s: &str) -> i64 {
 
         result = result
             .checked_mul(16)
-            .and_then(|c| c.checked_add(n as u64))
+            .and_then(|c| {
+                if negative {
+                    c.checked_sub(n as i64)
+                } else {
+                    c.checked_add(n as i64)
+                }
+            })
             .unwrap_or_else(|| {
                 panic!(
                     "Cannot represent {} as a 64-bit signed integer, since the value is too {}.",
@@ -61,12 +67,7 @@ pub fn hex_to_int(s: &str) -> i64 {
             });
     }
 
-    let result = result.cast_signed();
-    if negative && !result.is_negative() {
-        result.strict_neg()
-    } else {
-        result
-    }
+    result
 }
 
 pub fn bin_to_int(s: &str) -> i64 {
@@ -91,7 +92,7 @@ pub fn bin_to_int(s: &str) -> i64 {
         chars.next();
     }
 
-    let mut result = 0u64;
+    let mut result = 0i64;
 
     for ch in chars {
         let ch = ch.to_ascii_lowercase();
@@ -105,7 +106,13 @@ pub fn bin_to_int(s: &str) -> i64 {
 
         result = result
             .checked_mul(2)
-            .and_then(|c| c.checked_add(n as u64))
+            .and_then(|c| {
+                if negative {
+                    c.checked_sub(n as i64)
+                } else {
+                    c.checked_add(n as i64)
+                }
+            })
             .unwrap_or_else(|| {
                 panic!(
                     "Cannot represent {} as a 64-bit signed integer, since the value is too {}.",
@@ -115,12 +122,7 @@ pub fn bin_to_int(s: &str) -> i64 {
             });
     }
 
-    let result = result.cast_signed();
-    if negative && !result.is_negative() {
-        result.strict_neg()
-    } else {
-        result
-    }
+    result
 }
 
 pub fn to_int(s: &str) -> i64 {
@@ -135,7 +137,7 @@ pub fn to_int(s: &str) -> i64 {
         return 0;
     }
 
-    let mut integer = 0u64;
+    let mut integer = 0i64;
     let mut negative = false;
 
     let mut reading = Reading::Sign;
@@ -165,7 +167,13 @@ pub fn to_int(s: &str) -> i64 {
 
                     integer = integer
                         .checked_mul(10)
-                        .and_then(|c| c.checked_add(n as u64))
+                        .and_then(|c| {
+                            if negative {
+                                c.checked_sub(n as i64)
+                            } else {
+                                c.checked_add(n as i64)
+                            }
+                        })
                         .unwrap_or_else(|| {
                             panic!(
                                 "Cannot represent {} as a 64-bit signed integer, since the value is too {}.",
@@ -183,12 +191,7 @@ pub fn to_int(s: &str) -> i64 {
         iter.next();
     }
 
-    let integer = integer.cast_signed();
-    if negative && !integer.is_negative() {
-        integer.strict_neg()
-    } else {
-        integer
-    }
+    integer
 }
 
 pub fn to_float(s: &str) -> f64 {
