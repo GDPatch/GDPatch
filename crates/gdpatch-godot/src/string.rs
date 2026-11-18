@@ -21,11 +21,11 @@ pub fn hex_to_int(s: &str) -> i64 {
 
     let mut chars = NPeekable::new(s.chars());
 
-    let sign = if chars.peek(0) == Some('-') {
+    let negative = if chars.peek(0) == Some('-') {
         chars.next();
-        -1i64
+        true
     } else {
-        1
+        false
     };
 
     if chars.peek(0) == Some('0') && chars.peek(1).map(|c| c.to_ascii_lowercase()) == Some('x') {
@@ -51,17 +51,23 @@ pub fn hex_to_int(s: &str) -> i64 {
 
         result = result
             .checked_mul(16)
-            .and_then(|c| c.checked_add(n as i64))
+            .and_then(|c| {
+                if negative {
+                    c.checked_sub(n as i64)
+                } else {
+                    c.checked_add(n as i64)
+                }
+            })
             .unwrap_or_else(|| {
                 panic!(
                     "Cannot represent {} as a 64-bit signed integer, since the value is too {}.",
                     s,
-                    if sign == 1 { "large" } else { "small" }
+                    if negative { "small" } else { "large" }
                 )
             });
     }
 
-    result * sign
+    result
 }
 
 pub fn bin_to_int(s: &str) -> i64 {
@@ -71,11 +77,11 @@ pub fn bin_to_int(s: &str) -> i64 {
 
     let mut chars = NPeekable::new(s.chars());
 
-    let sign = if chars.peek(0) == Some('-') {
+    let negative = if chars.peek(0) == Some('-') {
         chars.next();
-        -1i64
+        true
     } else {
-        1
+        false
     };
 
     if s.len() > 2
@@ -100,17 +106,23 @@ pub fn bin_to_int(s: &str) -> i64 {
 
         result = result
             .checked_mul(2)
-            .and_then(|c| c.checked_add(n as i64))
+            .and_then(|c| {
+                if negative {
+                    c.checked_sub(n as i64)
+                } else {
+                    c.checked_add(n as i64)
+                }
+            })
             .unwrap_or_else(|| {
                 panic!(
                     "Cannot represent {} as a 64-bit signed integer, since the value is too {}.",
                     s,
-                    if sign == 1 { "large" } else { "small" }
+                    if negative { "small" } else { "large" }
                 )
             });
     }
 
-    result * sign
+    result
 }
 
 pub fn to_int(s: &str) -> i64 {
@@ -126,7 +138,7 @@ pub fn to_int(s: &str) -> i64 {
     }
 
     let mut integer = 0i64;
-    let mut sign = 1i64;
+    let mut negative = false;
 
     let mut reading = Reading::Sign;
     let mut iter = s.chars().peekable();
@@ -140,10 +152,10 @@ pub fn to_int(s: &str) -> i64 {
                     reading = Reading::Int;
                     continue;
                 } else if ch == '-' {
-                    sign = -1;
+                    negative = true;
                     reading = Reading::Int;
                 } else if ch == '+' {
-                    sign = 1;
+                    negative = false;
                     reading = Reading::Int;
                 } else {
                     // XXX: This seems like it should explode?
@@ -155,12 +167,18 @@ pub fn to_int(s: &str) -> i64 {
 
                     integer = integer
                         .checked_mul(10)
-                        .and_then(|c| c.checked_add(n as i64))
+                        .and_then(|c| {
+                            if negative {
+                                c.checked_sub(n as i64)
+                            } else {
+                                c.checked_add(n as i64)
+                            }
+                        })
                         .unwrap_or_else(|| {
                             panic!(
                                 "Cannot represent {} as a 64-bit signed integer, since the value is too {}.",
                                 s,
-                                if sign == 1 { "large" } else { "small" }
+                                if negative { "small" } else { "large" }
                             )
                         });
                 } else {
@@ -173,7 +191,7 @@ pub fn to_int(s: &str) -> i64 {
         iter.next();
     }
 
-    sign * integer
+    integer
 }
 
 pub fn to_float(s: &str) -> f64 {

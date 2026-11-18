@@ -380,6 +380,12 @@ impl Parser<'_> {
         matches!(self.current.0, Token::Eof)
     }
 
+    /// Checks if the current token can be represented as an identifier.
+    /// This should be used instead of `matches!(self.current.0, Token::Identifier(_))`.
+    fn current_is_identifier(&self) -> bool {
+        self.current.0.is_identifier()
+    }
+
     /// Helper method that acts as [`Variant`]'s implicit conversion to [`StringName`].
     fn previous_as_string(&self) -> Option<StringName> {
         let token = self.previous.as_ref()?;
@@ -583,7 +589,7 @@ impl Parser<'_> {
     }
 
     fn parse_class_name(&mut self) {
-        if matches!(self.current.0, Token::Identifier(_)) {
+        if self.current_is_identifier() {
             self.advance();
             let identifier = self.parse_identifier();
             if let Some(current_class) = self.current_class {
@@ -633,7 +639,7 @@ impl Parser<'_> {
             }
         }
 
-        if matches!(self.current.0, Token::Identifier(_)) {
+        if self.current_is_identifier() {
             self.advance();
         } else {
             self.push_error(r#"Expected superclass name after "extends"."#);
@@ -648,7 +654,7 @@ impl Parser<'_> {
         while matches!(self.current.0, Token::Period) {
             self.advance();
 
-            if matches!(self.current.0, Token::Identifier(_)) {
+            if self.current_is_identifier() {
                 self.advance();
             } else {
                 self.push_error(r#"Expected superclass name after "."."#);
@@ -857,7 +863,7 @@ impl Parser<'_> {
     ) -> Option<NodeRef<VariableNode>> {
         let (variable, guard) = self.alloc_node::<VariableNode>();
 
-        if matches!(self.current.0, Token::Identifier(_)) {
+        if self.current_is_identifier() {
             self.advance();
         } else {
             self.push_error(r#"Expected variable name after "var"."#);
@@ -932,7 +938,7 @@ impl Parser<'_> {
     fn parse_constant(&mut self) -> Option<NodeRef<ConstantNode>> {
         let (constant, guard) = self.alloc_node::<ConstantNode>();
 
-        if matches!(self.current.0, Token::Identifier(_)) {
+        if self.current_is_identifier() {
             self.advance();
         } else {
             self.push_error(r#"Expected constant name after "const"."#);
@@ -981,7 +987,7 @@ impl Parser<'_> {
     fn parse_signal(&mut self) -> Option<NodeRef<SignalNode>> {
         let (signal, guard) = self.alloc_node::<SignalNode>();
 
-        if matches!(self.current.0, Token::Identifier(_)) {
+        if self.current_is_identifier() {
             self.advance();
         } else {
             self.push_error(r#"Expected signal name after "signal"."#);
@@ -1051,7 +1057,7 @@ impl Parser<'_> {
     fn parse_function(&mut self, is_static: bool) -> Option<NodeRef<FunctionNode>> {
         let (function, _guard) = self.alloc_node::<FunctionNode>();
 
-        if matches!(self.current.0, Token::Identifier(_)) {
+        if self.current_is_identifier() {
             self.advance();
         } else {
             self.push_error(r#"Expected function name after "func"."#);
@@ -1608,7 +1614,7 @@ impl Parser<'_> {
     fn parse_for(&mut self) -> NodeRef<ForNode> {
         let (r#for, _guard) = self.alloc_node::<ForNode>();
 
-        if matches!(self.current.0, Token::Identifier(_)) {
+        if self.current_is_identifier() {
             self.advance();
             let variable = self.parse_identifier();
             self.node_pool[r#for].variable = Some(variable);
@@ -1956,7 +1962,7 @@ impl Parser<'_> {
                 // Bind.
                 self.advance();
 
-                if matches!(self.current.0, Token::Identifier(_)) {
+                if self.current_is_identifier() {
                     self.advance();
                 } else {
                     self.push_error(r#"Expected bind name after "var"."#);
@@ -2235,7 +2241,7 @@ impl Parser<'_> {
         self.current_class = Some(class);
         self.node_pool[class].outer = previous_class;
 
-        if matches!(self.current.0, Token::Identifier(_)) {
+        if self.current_is_identifier() {
             self.advance();
 
             let identifier = self.parse_identifier();
@@ -2298,7 +2304,7 @@ impl Parser<'_> {
         let (r#enum, guard) = self.alloc_node::<EnumNode>();
         let mut named = false;
 
-        if matches!(self.current.0, Token::Identifier(_)) {
+        if self.current_is_identifier() {
             self.advance();
 
             let identifier = self.parse_identifier();
@@ -2324,7 +2330,7 @@ impl Parser<'_> {
                 break; // Allow trailing comma.
             }
 
-            if matches!(self.current.0, Token::Identifier(_)) {
+            if self.current_is_identifier() {
                 self.advance();
 
                 let identifier = self.parse_identifier();
@@ -2416,7 +2422,7 @@ impl Parser<'_> {
             }
         }
 
-        if matches!(self.current.0, Token::Identifier(_)) {
+        if self.current_is_identifier() {
             self.advance();
         } else {
             self.push_error(r#"Expected "get" or "set" for property declaration."#);
@@ -2476,7 +2482,7 @@ impl Parser<'_> {
                 }
             }
 
-            if matches!(self.current.0, Token::Identifier(_)) {
+            if self.current_is_identifier() {
                 self.advance();
             } else {
                 break;
@@ -2521,7 +2527,7 @@ impl Parser<'_> {
                 self.consume(TokenType::ParenthesisOpen, r#"Expected "(" after "set"."#);
 
                 let (parameter, parameter_guard) = self.alloc_node::<ParameterNode>();
-                if matches!(self.current.0, Token::Identifier(_)) {
+                if self.current_is_identifier() {
                     self.advance();
 
                     self.reset_span(parameter, self.previous().1);
@@ -2567,7 +2573,7 @@ impl Parser<'_> {
             Property::SetGet(mut setget_property) => {
                 self.consume(TokenType::Equal, r#"Expected "=" after "set"."#);
 
-                if matches!(self.current.0, Token::Identifier(_)) {
+                if self.current_is_identifier() {
                     self.advance();
                     let identifier = self.parse_identifier();
 
@@ -2627,7 +2633,7 @@ impl Parser<'_> {
             Property::SetGet(mut setget_property) => {
                 self.consume(TokenType::Equal, r#"Expected "=" after "get"."#);
 
-                if matches!(self.current.0, Token::Identifier(_)) {
+                if self.current_is_identifier() {
                     self.advance();
                     let identifier = self.parse_identifier();
 
@@ -2782,7 +2788,7 @@ impl Parser<'_> {
     }
 
     fn parse_parameter(&mut self) -> Option<NodeRef<ParameterNode>> {
-        if matches!(self.current.0, Token::Identifier(_)) {
+        if self.current_is_identifier() {
             self.advance();
         } else {
             self.push_error("Expected parameter name.");
@@ -2820,7 +2826,7 @@ impl Parser<'_> {
     fn parse_type(&mut self, allow_void: bool) -> Option<NodeRef<TypeNode>> {
         let (node, _guard) = self.alloc_node::<TypeNode>();
 
-        if matches!(self.current.0, Token::Identifier(_)) {
+        if self.current_is_identifier() {
             self.advance();
         } else {
             if matches!(self.current.0, Token::Void) {
@@ -2896,7 +2902,7 @@ impl Parser<'_> {
             if matches!(self.current.0, Token::Period) {
                 self.advance();
 
-                if matches!(self.current.0, Token::Identifier(_)) {
+                if self.current_is_identifier() {
                     self.advance();
                     type_element = self.parse_identifier();
                     self.node_pool[node].type_chain.push(type_element);
@@ -3297,7 +3303,7 @@ impl Parser<'_> {
             .map(|r| self.node_pool[r].is_static)
             .unwrap_or(false);
 
-        if matches!(self.current.0, Token::Identifier(_)) {
+        if self.current_is_identifier() {
             self.advance();
             self.node_pool[function].identifier = Some(self.parse_identifier());
         }
@@ -3497,7 +3503,7 @@ impl Parser<'_> {
             } else {
                 self.consume(TokenType::Period, r#"Expected "." or "(" after "super"."#);
 
-                if matches!(self.current.0, Token::Identifier(_)) {
+                if self.current_is_identifier() {
                     self.advance();
                 } else {
                     self.push_error(r#"Expected function name after "."."#);
@@ -3812,7 +3818,7 @@ impl Parser<'_> {
             self.current.0 = Token::Identifier(self.current.0.get_identifier().to_owned());
         }
 
-        if matches!(self.current.0, Token::Identifier(_)) {
+        if self.current_is_identifier() {
             self.advance();
         } else {
             self.push_error(r#"Expected identifier after "." for attribute access."#);
