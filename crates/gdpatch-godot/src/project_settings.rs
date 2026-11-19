@@ -67,4 +67,24 @@ impl ProjectSettings {
 
         Ok(())
     }
+
+    pub fn real_t_is_double(&self) -> bool {
+        self.inner
+            .get("application/config/features")
+            .map(|p| match p {
+                Variant::PackedStringArray(array) => array.iter().any(|f| f == "Double Precision"),
+                _ => false,
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn use_hidden_project_data_directory(&self) -> bool {
+        self.inner
+            .get("application/config/use_hidden_project_data_directory")
+            .map(|p| match p {
+                Variant::Bool(value) => *value,
+                _ => true,
+            })
+            .unwrap_or(true)
+    }
 }
