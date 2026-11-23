@@ -1,8 +1,9 @@
 use crate::gdextension::sys::{
     GDExtensionClassLibraryPtr, GDExtensionInterface, GDExtensionInterfaceUnknown,
-    GDExtensionPtrBuiltInMethod, GDExtensionPtrConstructor, GDExtensionPtrDestructor,
-    GDExtensionString, GDExtensionStringName, GDExtensionTypeFromVariantConstructorFunc,
-    GDExtensionVariantFromTypeConstructorFunc, GDExtensionVariantType, PackedArray,
+    GDExtensionMethodBindPtr, GDExtensionPtrBuiltInMethod, GDExtensionPtrConstructor,
+    GDExtensionPtrDestructor, GDExtensionString, GDExtensionStringName,
+    GDExtensionTypeFromVariantConstructorFunc, GDExtensionVariantFromTypeConstructorFunc,
+    GDExtensionVariantType, PackedArray,
 };
 use std::ops::Deref;
 use std::sync::OnceLock;
@@ -43,6 +44,9 @@ pub struct GDExtensionApi {
     pub destruct_packed_byte_array: GDExtensionPtrDestructor,
     pub construct_packed_byte_array_from_variant: GDExtensionTypeFromVariantConstructorFunc,
     pub construct_variant_from_packed_byte_array: GDExtensionVariantFromTypeConstructorFunc,
+
+    pub construct_object_from_variant: GDExtensionTypeFromVariantConstructorFunc,
+    pub construct_variant_from_object: GDExtensionVariantFromTypeConstructorFunc,
 
     built_in_methods: OnceLock<GDExtensionBuiltInMethods>,
     strings: OnceLock<GDExtensionStrings>,
@@ -163,6 +167,16 @@ impl GDExtensionApi {
                 .expect("missing variant from type constructor")
         };
 
+        let construct_object_from_variant = unsafe {
+            (interface.get_variant_to_type_constructor)(GDExtensionVariantType::Object)
+                .expect("missing variant to type constructor")
+        };
+
+        let construct_variant_from_object = unsafe {
+            (interface.get_variant_from_type_constructor)(GDExtensionVariantType::Object)
+                .expect("missing variant from type constructor")
+        };
+
         Self {
             library,
             interface,
@@ -186,6 +200,9 @@ impl GDExtensionApi {
             construct_packed_byte_array_from_variant,
             construct_variant_from_packed_byte_array,
 
+            construct_object_from_variant,
+            construct_variant_from_object,
+
             built_in_methods: OnceLock::new(),
             strings: OnceLock::new(),
         }
@@ -208,6 +225,9 @@ impl GDExtensionApi {
 pub struct GDExtensionBuiltInMethods {
     pub resize_packed_byte_array: GDExtensionPtrBuiltInMethod,
     pub packed_byte_array_size: GDExtensionPtrBuiltInMethod,
+
+    pub refcounted_init_ref: GDExtensionMethodBindPtr,
+    pub refcounted_unreference: GDExtensionMethodBindPtr,
 }
 
 impl GDExtensionBuiltInMethods {
@@ -238,9 +258,38 @@ impl GDExtensionBuiltInMethods {
                 .expect("missing PackedByteArray::size")
         };
 
+        let refcounted_init_ref = unsafe {
+            API.interface
+                .lookup_method_bind(
+                    false,
+                    false,
+                    "RefCounted",
+                    "init_ref",
+                    Some(GDExtensionVariantType::Bool),
+                    &[],
+                )
+                .expect("missing RefCounted::init_ref")
+        };
+
+        let refcounted_unreference = unsafe {
+            API.interface
+                .lookup_method_bind(
+                    false,
+                    false,
+                    "RefCounted",
+                    "unreference",
+                    Some(GDExtensionVariantType::Bool),
+                    &[],
+                )
+                .expect("missing RefCounted::unreference")
+        };
+
         Self {
             resize_packed_byte_array,
             packed_byte_array_size,
+
+            refcounted_init_ref,
+            refcounted_unreference,
         }
     }
 }

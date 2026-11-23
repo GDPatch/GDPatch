@@ -1,25 +1,27 @@
 use crate::gdextension::api::API;
 use crate::gdextension::sys::{
-    GDExtensionBool, GDExtensionCallError, GDExtensionClassCreationInfo,
+    GDExtensionBool, GDExtensionCallError, GDExtensionCallErrorType, GDExtensionClassCreationInfo,
     GDExtensionClassInstancePtr, GDExtensionClassMethodArgumentMetadata,
     GDExtensionClassMethodFlags, GDExtensionClassMethodInfo, GDExtensionConstTypePtr,
     GDExtensionConstVariantPtr, GDExtensionInstanceBindingCallbacks, GDExtensionInt,
-    GDExtensionObjectPtr, GDExtensionPropertyInfo, GDExtensionString, GDExtensionStringName,
-    GDExtensionStringPtr, GDExtensionType, GDExtensionTypePtr, GDExtensionVariant,
-    GDExtensionVariantPtr, GDExtensionVariantType, PackedArray,
+    GDExtensionObjectPtr, GDExtensionPropertyInfo, GDExtensionRc, GDExtensionString,
+    GDExtensionStringName, GDExtensionStringPtr, GDExtensionType, GDExtensionTypePtr,
+    GDExtensionUninitializedTypePtr, GDExtensionVariant, GDExtensionVariantPtr,
+    GDExtensionVariantType, PackedArray,
 };
 use gobbind::{
     Consumes, Converter, DynamicFn, FunctionInfo, Provides, WalkArgument, WalkReturn, WalkableFn,
     Walker,
 };
 use std::marker::PhantomData;
-use std::mem::ManuallyDrop;
+use std::mem::{ManuallyDrop, MaybeUninit};
 use std::{ffi::c_void, ptr};
 
 #[derive(Debug)]
 pub struct GDExtensionPtrcallConverter<Class> {
     instance: GDExtensionClassInstancePtr,
     args: *const GDExtensionConstTypePtr,
+    arg_index: usize,
     ret: GDExtensionTypePtr,
     phantom: PhantomData<Class>,
 }
@@ -28,15 +30,61 @@ impl<'state, Class> Converter<'state> for GDExtensionPtrcallConverter<Class> {
     type Error = ();
 }
 
+impl<'state, Class> Provides<'state, &'state Class> for GDExtensionPtrcallConverter<Class> {
+    fn provide(&mut self) -> Result<&'state Class, Self::Error> {
+        if self.arg_index != 0 {
+            panic!("instance should never be after the first argument with ptrcall")
+        }
+
+        if self.instance.is_null() {
+            panic!("instance should never be null with ptrcall")
+        }
+
+        let instance = self.instance as *mut Class;
+        let instance = unsafe { instance.as_ref_unchecked() };
+
+        self.instance = ptr::null_mut(); // only allow consuming instance once
+
+        Ok(instance)
+    }
+}
+
+impl<'state, Class> Provides<'state, &'state mut Class> for GDExtensionPtrcallConverter<Class> {
+    fn provide(&mut self) -> Result<&'state mut Class, Self::Error> {
+        if self.arg_index != 0 {
+            panic!("instance should never be after the first argument with ptrcall")
+        }
+
+        if self.instance.is_null() {
+            panic!("instance should never be null with ptrcall")
+        }
+
+        let instance = self.instance as *mut Class;
+        let instance = unsafe { instance.as_mut_unchecked() };
+
+        self.instance = ptr::null_mut(); // only allow consuming instance once
+
+        Ok(instance)
+    }
+}
+
 impl<'state, Class> Provides<'state, String> for GDExtensionPtrcallConverter<Class> {
     fn provide(&mut self) -> Result<String, Self::Error> {
-        let argument = unsafe { *self.args } as GDExtensionStringPtr;
-        unsafe {
-            self.args = self.args.add(1);
-        }
+        let argument = unsafe { *self.args.add(self.arg_index) } as GDExtensionStringPtr;
+        self.arg_index += 1;
 
         let argument = unsafe { argument.as_ref_unchecked() }; // TODO
         Ok(argument.into())
+    }
+}
+
+impl<'state, Class, T> Provides<'state, GDExtensionRc<T>> for GDExtensionPtrcallConverter<Class> {
+    fn provide(&mut self) -> Result<GDExtensionRc<T>, Self::Error> {
+        let argument = unsafe { *self.args.add(self.arg_index) } as GDExtensionObjectPtr;
+        self.arg_index += 1;
+
+        let argument = unsafe { GDExtensionRc::<T>::new(argument) };
+        Ok(argument)
     }
 }
 
@@ -79,19 +127,38 @@ impl<'state, Class> Consumes<'state, ()> for GDExtensionPtrcallConverter<Class> 
 pub struct GDExtensionVariantConverter<Class> {
     instance: GDExtensionClassInstancePtr,
     args: *const GDExtensionConstVariantPtr,
+    arg_index: usize,
+    arg_count: usize,
     r#return: GDExtensionVariantPtr,
     marker: PhantomData<Class>,
 }
 
+impl<'state, Class> Converter<'state> for GDExtensionVariantConverter<Class> {
+    type Error = GDExtensionCallError;
+}
+
 impl<Class> GDExtensionVariantConverter<Class> {
-    pub fn next_arg<T: GDExtensionType>(&mut self) -> Option<T> {
-        let argument = unsafe { *self.args };
-        unsafe {
-            self.args = self.args.add(1);
+    pub unsafe fn next_arg_raw(
+        &mut self,
+    ) -> Result<*const GDExtensionVariant, GDExtensionCallError> {
+        if self.arg_index >= self.arg_count {
+            return Err(GDExtensionCallError {
+                error: GDExtensionCallErrorType::ErrorTooFewArguments,
+                argument: self.arg_count as i32,
+                expected: self.arg_index as i32,
+            });
         }
 
-        let argument = unsafe { argument.as_ref()? };
-        Some(T::from_variant(argument))
+        let argument = unsafe { *self.args.add(self.arg_index) };
+        self.arg_index += 1;
+
+        Ok(argument)
+    }
+
+    pub fn next_arg<T: GDExtensionType>(&mut self) -> Result<T, GDExtensionCallError> {
+        let argument = unsafe { self.next_arg_raw()? };
+        let argument = unsafe { argument.as_ref().unwrap() };
+        Ok(T::from_variant(argument))
     }
 
     pub fn return_arg<T: GDExtensionType>(&mut self, value: T) {
@@ -101,14 +168,66 @@ impl<Class> GDExtensionVariantConverter<Class> {
     }
 }
 
-impl<'state, Class> Converter<'state> for GDExtensionVariantConverter<Class> {
-    type Error = GDExtensionCallError;
+impl<'state, Class> Provides<'state, &'state Class> for GDExtensionVariantConverter<Class> {
+    fn provide(&mut self) -> Result<&'state Class, Self::Error> {
+        if self.arg_index != 0 {
+            panic!("instance should never be after the first argument")
+        }
+
+        if self.instance.is_null() {
+            panic!("instance should never be null")
+        }
+
+        let instance = self.instance as *mut Class;
+        let instance = unsafe { instance.as_ref_unchecked() };
+
+        self.instance = ptr::null_mut(); // only allow consuming instance once
+
+        Ok(instance)
+    }
+}
+
+impl<'state, Class> Provides<'state, &'state mut Class> for GDExtensionVariantConverter<Class> {
+    fn provide(&mut self) -> Result<&'state mut Class, Self::Error> {
+        if self.arg_index != 0 {
+            panic!("instance should never be after the first argument")
+        }
+
+        if self.instance.is_null() {
+            panic!("instance should never be null")
+        }
+
+        let instance = self.instance as *mut Class;
+        let instance = unsafe { instance.as_mut_unchecked() };
+
+        self.instance = ptr::null_mut(); // only allow consuming instance once
+
+        Ok(instance)
+    }
 }
 
 impl<'state, Class> Provides<'state, String> for GDExtensionVariantConverter<Class> {
     fn provide(&mut self) -> Result<String, Self::Error> {
-        let argument = self.next_arg::<GDExtensionString>().unwrap(); // TODO
+        let argument = self.next_arg::<GDExtensionString>()?;
         Ok((&argument).into())
+    }
+}
+
+impl<'state, Class, T> Provides<'state, GDExtensionRc<T>> for GDExtensionVariantConverter<Class> {
+    fn provide(&mut self) -> Result<GDExtensionRc<T>, Self::Error> {
+        let argument = unsafe { self.next_arg_raw()? };
+
+        let mut result = MaybeUninit::uninit();
+        let ptr: GDExtensionObjectPtr = unsafe {
+            (API.construct_object_from_variant)(
+                &raw mut result as GDExtensionUninitializedTypePtr,
+                argument,
+            );
+
+            result.assume_init()
+        };
+
+        unsafe { Ok(GDExtensionRc::<T>::new(ptr)) }
     }
 }
 
@@ -165,13 +284,26 @@ impl OwnedArgument {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct GDExtensionWalker {
+#[derive(Debug)]
+pub struct GDExtensionWalker<Class> {
     return_type: Option<OwnedArgument>,
     arguments: Vec<OwnedArgument>,
+    has_instance: bool,
+    marker: PhantomData<Class>,
 }
 
-impl<'state> Walker<'state> for GDExtensionWalker {
+impl<Class> Default for GDExtensionWalker<Class> {
+    fn default() -> Self {
+        Self {
+            return_type: Default::default(),
+            arguments: Default::default(),
+            has_instance: Default::default(),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<'state, Class> Walker<'state> for GDExtensionWalker<Class> {
     type Error = ();
 }
 
@@ -205,27 +337,73 @@ impl ArgumentType for Vec<u8> {
     }
 }
 
-impl<'state, T> WalkArgument<'state, T> for GDExtensionWalker
-where
-    T: ArgumentType,
-{
+impl<T> ArgumentType for GDExtensionRc<T> {
+    fn convert() -> OwnedArgument {
+        OwnedArgument::new(GDExtensionVariantType::Object)
+    }
+}
+
+impl<'state, Class, T> WalkArgument<'state, GDExtensionRc<T>> for GDExtensionWalker<Class> {
     fn walk(&mut self) -> Result<(), Self::Error> {
-        self.arguments.push(T::convert());
+        self.arguments
+            .push(<GDExtensionRc<T> as ArgumentType>::convert());
         Ok(())
     }
 }
 
-impl<'state, T> WalkReturn<'state, T> for GDExtensionWalker
-where
-    T: ArgumentType,
-{
+// bullshit way to work around https://doc.rust-lang.org/error_codes/E0119.html
+macro_rules! impl_walker {
+    ($($ty:ty),*$(,)?) => {
+        $(
+        impl<'state, Class> WalkArgument<'state, $ty> for GDExtensionWalker<Class> {
+            fn walk(&mut self) -> Result<(), Self::Error> {
+                self.arguments.push(<$ty as ArgumentType>::convert());
+                Ok(())
+            }
+        }
+
+        impl<'state, Class> WalkReturn<'state, $ty> for GDExtensionWalker<Class> {
+            fn walk(&mut self) -> Result<(), Self::Error> {
+                self.return_type = Some(<$ty as ArgumentType>::convert());
+                Ok(())
+            }
+        }
+        )*
+    };
+}
+impl_walker!(bool, String, u64, Vec<u8>);
+
+impl<'state, Class> WalkArgument<'state, &'state Class> for GDExtensionWalker<Class> {
     fn walk(&mut self) -> Result<(), Self::Error> {
-        self.return_type = Some(T::convert());
+        if !self.arguments.is_empty() {
+            panic!("instance should never be after the first argument")
+        }
+
+        if self.has_instance {
+            panic!("instance should never be provided multiple times")
+        }
+
+        self.has_instance = true;
         Ok(())
     }
 }
 
-impl<'state> WalkReturn<'state, ()> for GDExtensionWalker {
+impl<'state, Class> WalkArgument<'state, &'state mut Class> for GDExtensionWalker<Class> {
+    fn walk(&mut self) -> Result<(), Self::Error> {
+        if !self.arguments.is_empty() {
+            panic!("instance should never be after the first argument")
+        }
+
+        if self.has_instance {
+            panic!("instance should never be provided multiple times")
+        }
+
+        self.has_instance = true;
+        Ok(())
+    }
+}
+
+impl<'state, Class> WalkReturn<'state, ()> for GDExtensionWalker<Class> {
     fn walk(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -284,18 +462,20 @@ unsafe extern "C" fn call_impl<Class, Fn, Dummy>(
     method_userdata_ptr: *mut c_void,
     p_instance: GDExtensionClassInstancePtr,
     p_args: *const GDExtensionConstVariantPtr,
-    _p_argument_count: GDExtensionInt,
+    p_argument_count: GDExtensionInt,
     r_return: GDExtensionVariantPtr,
     r_error: *mut GDExtensionCallError,
 ) where
     Fn: DynamicFn<'static, 'static, GDExtensionVariantConverter<Class>, Dummy>,
 {
-    // TODO: check argument counts
+    // TODO: check if too many arguments
     let method_userdata = unsafe { &*method_userdata_ptr.cast::<Fn>() };
 
     let mut converter = GDExtensionVariantConverter {
         instance: p_instance,
         args: p_args,
+        arg_index: 0,
+        arg_count: p_argument_count as usize,
         r#return: r_return,
         marker: PhantomData,
     };
@@ -322,6 +502,7 @@ unsafe extern "C" fn ptrcall_impl<Class, Fn, Dummy>(
     let mut converter = GDExtensionPtrcallConverter {
         instance: p_instance,
         args: p_args,
+        arg_index: 0,
         ret: r_ret,
         phantom: PhantomData,
     };
@@ -374,9 +555,9 @@ where
         }
     }
 
-    pub fn add_function<'this, Fn, Dummy>(&'this mut self, function: Fn)
+    pub fn add_function<Fn, Dummy>(&mut self, function: Fn)
     where
-        Fn: WalkableFn<'static, 'this, GDExtensionWalker, Dummy>,
+        Fn: WalkableFn<'static, 'static, GDExtensionWalker<Class>, Dummy>,
         Fn: DynamicFn<'static, 'static, GDExtensionPtrcallConverter<Class>, Dummy>,
         Fn: DynamicFn<'static, 'static, GDExtensionVariantConverter<Class>, Dummy>,
     {
@@ -385,10 +566,14 @@ where
         };
 
         let name = GDExtensionStringName::from(info.name());
-        let method_flags = GDExtensionClassMethodFlags::STATIC;
 
-        let mut walker = GDExtensionWalker::default();
+        let mut walker = GDExtensionWalker::<Class>::default();
         function.walk(&mut walker).unwrap(); // FIXME
+        let method_flags = if walker.has_instance {
+            GDExtensionClassMethodFlags::NORMAL
+        } else {
+            GDExtensionClassMethodFlags::STATIC
+        };
 
         let return_type = walker.return_type.as_ref().map(|t| t.as_raw());
         let arguments = walker

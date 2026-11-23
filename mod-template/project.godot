@@ -10,7 +10,7 @@ config_version=5
 
 [application]
 
-config/name="gdpatch_mod"
+config/name="gdpatch-mod-template"
 config/features=PackedStringArray("4.8", "Forward Plus")
 
 [editor_plugins]

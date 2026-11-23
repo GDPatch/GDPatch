@@ -81,7 +81,8 @@ use crate::gdextension::sys::{
     GDExtensionInterfaceVariantSetKeyed, GDExtensionInterfaceVariantSetNamed,
     GDExtensionInterfaceVariantStringify, GDExtensionInterfaceWorkerThreadPoolAddNativeGroupTask,
     GDExtensionInterfaceWorkerThreadPoolAddNativeTask, GDExtensionInterfaceXmlParserOpenBuffer,
-    GDExtensionPtrBuiltInMethod, GDExtensionStringName, GDExtensionType, GDExtensionVariantType,
+    GDExtensionMethodBindPtr, GDExtensionPtrBuiltInMethod, GDExtensionStringName, GDExtensionType,
+    GDExtensionVariantType,
 };
 use crate::hash::MurmurHash3;
 use std::ffi::{CString, c_char};
@@ -870,7 +871,7 @@ impl GDExtensionInterface {
         T: GDExtensionType,
     {
         // compute hash of the method - the engine checks to make sure we have the right signature
-        // https://github.com/godotengine/godot/blob/master/core/variant/variant_call.cpp#L1308-L1322
+        // https://github.com/godotengine/godot/blob/8f2e46bca3c1cca8f3b759a0eaf67e44082b81a4/core/variant/variant_call.cpp#L1308-L1322
         let mut hasher = MurmurHash3::new();
         hasher.hash(if is_const { 1 } else { 0 });
         hasher.hash(if is_static { 1 } else { 0 });
@@ -895,5 +896,47 @@ impl GDExtensionInterface {
         unsafe {
             (self.variant_get_ptr_builtin_method)(T::VARIANT_TYPE, &name, hash as GDExtensionInt)
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn lookup_method_bind(
+        &self,
+        is_const: bool,
+        is_vararg: bool,
+        class_name: impl Into<GDExtensionStringName>,
+        name: impl Into<GDExtensionStringName>,
+        return_type: Option<GDExtensionVariantType>,
+        arguments: &[GDExtensionVariantType],
+    ) -> Option<GDExtensionMethodBindPtr> {
+        let mut hasher = MurmurHash3::new();
+
+        hasher.hash(if return_type.is_some() { 1 } else { 0 });
+        hasher.hash(arguments.len() as u32);
+
+        if let Some(return_type) = return_type {
+            hasher.hash(return_type as u32);
+            // TODO: classname
+        }
+
+        for argument in arguments {
+            hasher.hash(*argument as u32);
+            // TODO: classname
+        }
+
+        // TODO: default arguments
+        hasher.hash(0);
+
+        hasher.hash(if is_const { 1 } else { 0 });
+        hasher.hash(if is_vararg { 1 } else { 0 });
+
+        let hash = hasher.finish();
+
+        let class_name = class_name.into();
+        let name = name.into();
+
+        let ptr =
+            unsafe { (self.classdb_get_method_bind)(&class_name, &name, hash as GDExtensionInt) };
+
+        if ptr.is_null() { None } else { Some(ptr) }
     }
 }

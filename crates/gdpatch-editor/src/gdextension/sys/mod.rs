@@ -20,12 +20,16 @@
 //!   changed the type of a field in `GDExtensionCallableCustomInfo` without making a new version
 //!   of the struct.
 mod after_v41;
+mod object;
+mod rc;
 mod string;
 mod v40;
 mod variant;
 mod vector;
 
 pub use self::after_v41::*;
+pub use self::object::GDExtensionObject;
+pub use self::rc::GDExtensionRc;
 pub use self::string::{GDExtensionString, GDExtensionStringName};
 pub use self::v40::*;
 pub use self::variant::GDExtensionVariant;

@@ -7,6 +7,7 @@ use crate::gdextension::sys::{
     GDExtensionClassLibraryPtr, GDExtensionInitialization, GDExtensionInitializationLevel,
     GDExtensionInterfaceUnknown,
 };
+use crate::intercept::Filesilly;
 use std::ffi::c_void;
 use std::mem;
 // #[global_allocator]
@@ -37,7 +38,11 @@ unsafe extern "C" fn initialize(_userdata: *mut c_void, level: GDExtensionInitia
     }
 
     let mut class = GDClass::<GDPatchPack>::new("GDPatchPack");
-    class.add_function(GDPatchPack::set_pack);
+    class.add_function(GDPatchPack::init);
+    mem::forget(class); // TODO: drop unregisters
+
+    let mut class = GDClass::<Filesilly>::new("Filesilly");
+    class.add_function(Filesilly::init);
     mem::forget(class); // TODO: drop unregisters
 
     println!("meow");
