@@ -1,0 +1,20 @@
+[package]
+name = "gdpatch-editor"
+description = "GDExtension plugin for the Godot editor"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+double-precision = []
+
+[dependencies]
+gdpatch-godot.workspace = true
+filesilly.workspace = true
+memmap2.workspace = true
+parking_lot.workspace = true
+gobbind = { path = "../gobbind" }

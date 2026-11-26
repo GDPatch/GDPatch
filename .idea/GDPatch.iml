@@ -7,6 +7,9 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/gdpatch-loader/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/gdpatch/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/gdpatch-godot/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/gdpatch-editor/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/gobbind/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/gobbind/macros/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

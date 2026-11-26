@@ -1,0 +1,7 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+
+# GDPatch stuff
+gdpatch_editor.json
+export_presets.cfg
